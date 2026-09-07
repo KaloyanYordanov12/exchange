@@ -46,3 +46,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Image builds and the container serves `/actuator/health` → `200 UP`.
 - `docker-compose.yml` wiring the app plus a pinned `postgres:18.6` service for
   Phase 6's benefit; the app does not connect to it yet.
+- GitHub Actions CI (`.github/workflows/ci.yml`): runs `./mvnw -B verify` on JDK
+  25 (Temurin, `actions/setup-java@v5`) with Maven caching, on pushes and pull
+  requests. The `mvnw` executable bit is tracked so `./mvnw` runs on Linux CI.
