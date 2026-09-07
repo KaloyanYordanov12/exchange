@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 7 — simulator metric core.** `LatencyPercentiles` (pure, deterministic
+  nearest-rank) and a bounded, thread-safe `PercentileTracker` producing a
+  `LatencySummary` (p50/p95/p99/max over real samples). Percentiles are computed
+  from measured samples, never fabricated, and are exactly unit-testable.
+
 - **Phase 6 — persistence groundwork.** `OrderAccepted` enriched to carry the
   full order (side/price/quantity/account) so the audit log is meaningful.
   `AsyncEventConsumer`: a bounded-queue, own-thread, batched outbound sink whose
