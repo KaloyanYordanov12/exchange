@@ -47,12 +47,22 @@ class CommandAndEventTest {
 
   @Test
   void orderAcceptedValidates() {
-    OrderAccepted event = new OrderAccepted(OrderId.of(3L), 9L);
+    OrderAccepted event = new OrderAccepted(OrderId.of(3L), Side.BUY, 100L, 5L, 7L, 9L);
     assertThat(event.id()).isEqualTo(OrderId.of(3L));
+    assertThat(event.side()).isEqualTo(Side.BUY);
+    assertThat(event.price()).isEqualTo(100L);
+    assertThat(event.quantity()).isEqualTo(5L);
+    assertThat(event.accountId()).isEqualTo(7L);
     assertThat(event.sequence()).isEqualTo(9L);
-    assertThatThrownBy(() -> new OrderAccepted(null, 0L))
+    assertThatThrownBy(() -> new OrderAccepted(null, Side.BUY, 100L, 5L, 7L, 0L))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> new OrderAccepted(OrderId.of(1L), -1L))
+    assertThatThrownBy(() -> new OrderAccepted(OrderId.of(1L), null, 100L, 5L, 7L, 0L))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new OrderAccepted(OrderId.of(1L), Side.BUY, 0L, 5L, 7L, 0L))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new OrderAccepted(OrderId.of(1L), Side.BUY, 100L, 0L, 7L, 0L))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new OrderAccepted(OrderId.of(1L), Side.BUY, 100L, 5L, 7L, -1L))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

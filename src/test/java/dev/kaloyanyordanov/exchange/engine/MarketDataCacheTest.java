@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import dev.kaloyanyordanov.exchange.book.BookSnapshot;
 import dev.kaloyanyordanov.exchange.book.OrderId;
 import dev.kaloyanyordanov.exchange.book.PriceLevel;
+import dev.kaloyanyordanov.exchange.book.Side;
 import dev.kaloyanyordanov.exchange.book.Trade;
 import dev.kaloyanyordanov.exchange.ledger.Account;
 import java.util.List;
@@ -46,7 +47,7 @@ class MarketDataCacheTest {
   @Test
   void ignoresEventsThatAreNotPartOfTheReadModel() {
     MarketDataCache cache = new MarketDataCache();
-    cache.publish(new OrderAccepted(OrderId.of(1L), 0L));
+    cache.publish(new OrderAccepted(OrderId.of(1L), Side.BUY, 100L, 5L, 1L, 0L));
     cache.publish(
         new OrderRejected(OrderId.of(1L), OrderRejected.RejectReason.INSUFFICIENT_CASH, 1L));
     cache.publish(

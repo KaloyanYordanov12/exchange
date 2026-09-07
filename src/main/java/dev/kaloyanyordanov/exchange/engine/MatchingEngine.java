@@ -189,7 +189,14 @@ public final class MatchingEngine {
             submit.quantity(),
             arrivalSequence++,
             submit.accountId());
-    publisher.publish(new OrderAccepted(order.id(), order.sequence()));
+    publisher.publish(
+        new OrderAccepted(
+            order.id(),
+            order.side(),
+            order.price(),
+            order.quantity(),
+            order.accountId(),
+            order.sequence()));
 
     List<Trade> trades = Matcher.match(book, order, policy, tradeSequence);
     tradeSequence += trades.size();

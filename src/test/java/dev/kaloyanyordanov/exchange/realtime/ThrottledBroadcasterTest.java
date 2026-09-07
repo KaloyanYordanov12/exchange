@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import dev.kaloyanyordanov.exchange.book.BookSnapshot;
 import dev.kaloyanyordanov.exchange.book.OrderId;
 import dev.kaloyanyordanov.exchange.book.PriceLevel;
+import dev.kaloyanyordanov.exchange.book.Side;
 import dev.kaloyanyordanov.exchange.book.Trade;
 import dev.kaloyanyordanov.exchange.engine.BookChanged;
 import dev.kaloyanyordanov.exchange.engine.OrderAccepted;
@@ -129,7 +130,7 @@ class ThrottledBroadcasterTest {
     RecordingSink sink = new RecordingSink();
     broadcaster.register(sink);
 
-    broadcaster.publish(new OrderAccepted(OrderId.of(1L), 0L));
+    broadcaster.publish(new OrderAccepted(OrderId.of(1L), Side.BUY, 100L, 5L, 1L, 0L));
     broadcaster.flush();
 
     assertThat(sink.messages).isEmpty();

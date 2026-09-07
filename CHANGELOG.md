@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 6 — persistence groundwork.** `OrderAccepted` enriched to carry the
+  full order (side/price/quantity/account) so the audit log is meaningful.
+  `AsyncEventConsumer`: a bounded-queue, own-thread, batched outbound sink whose
+  `publish` is a non-blocking enqueue (drop-and-count on full) — the mechanism
+  that keeps a slow consumer (e.g. the database) off the matching hot path.
+
 - **Phase 5 — throttled broadcaster core.** `ThrottledBroadcaster` consumes the
   event stream on the matching thread with only lock-free work (coalesce the
   latest book snapshot; offer trades to a bounded, drop-on-full tape) and flushes

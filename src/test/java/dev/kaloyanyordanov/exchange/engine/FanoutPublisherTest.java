@@ -3,6 +3,7 @@ package dev.kaloyanyordanov.exchange.engine;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.kaloyanyordanov.exchange.book.OrderId;
+import dev.kaloyanyordanov.exchange.book.Side;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -15,7 +16,7 @@ class FanoutPublisherTest {
     RecordingEventPublisher b = new RecordingEventPublisher();
     FanoutPublisher fanout = new FanoutPublisher(List.of(a, b));
 
-    OrderAccepted event = new OrderAccepted(OrderId.of(1L), 0L);
+    OrderAccepted event = new OrderAccepted(OrderId.of(1L), Side.BUY, 100L, 5L, 1L, 0L);
     fanout.publish(event);
 
     assertThat(a.events()).containsExactly(event);
@@ -33,7 +34,7 @@ class FanoutPublisherTest {
     EventPublisher healthy = delivered::add;
     FanoutPublisher fanout = new FanoutPublisher(List.of(throwing, healthy));
 
-    OrderAccepted event = new OrderAccepted(OrderId.of(1L), 0L);
+    OrderAccepted event = new OrderAccepted(OrderId.of(1L), Side.BUY, 100L, 5L, 1L, 0L);
     fanout.publish(event);
 
     // The healthy sink still received the event; the failure was counted.
