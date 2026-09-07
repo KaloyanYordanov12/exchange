@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import dev.kaloyanyordanov.exchange.book.OrderId;
 import dev.kaloyanyordanov.exchange.book.Side;
 import dev.kaloyanyordanov.exchange.book.Symbol;
-import dev.kaloyanyordanov.exchange.ledger.Account;
 import dev.kaloyanyordanov.exchange.ledger.Ledger;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
@@ -14,9 +13,9 @@ class MatchingEngineSnapshotTest {
 
   private static final Symbol SYMBOL = new Symbol("BTC", "USD", 1L, 1L);
 
-  private static Account accountById(EngineSnapshot snapshot, long id) {
+  private static AccountBalance accountById(EngineSnapshot snapshot, long id) {
     return snapshot.accounts().stream()
-        .filter(account -> account.id() == id)
+        .filter(account -> account.accountId() == id)
         .findFirst()
         .orElseThrow();
   }
@@ -50,8 +49,8 @@ class MatchingEngineSnapshotTest {
     assertThat(after.cumulativeAssetFromSellers()).isEqualTo(5L);
     assertThat(after.cumulativeAssetToBuyers()).isEqualTo(5L);
     // Settled balances.
-    assertThat(accountById(after, 1L)).isEqualTo(new Account(1L, 9_500L, 5L));
-    assertThat(accountById(after, 2L)).isEqualTo(new Account(2L, 500L, 95L));
+    assertThat(accountById(after, 1L)).isEqualTo(new AccountBalance(1L, 9_500L, 5L));
+    assertThat(accountById(after, 2L)).isEqualTo(new AccountBalance(2L, 500L, 95L));
     // Fully matched: book empty.
     assertThat(after.restingOrders()).isEmpty();
     assertThat(after.book().bids()).isEmpty();

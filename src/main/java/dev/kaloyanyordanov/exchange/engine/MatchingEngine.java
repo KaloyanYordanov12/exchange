@@ -7,7 +7,6 @@ import dev.kaloyanyordanov.exchange.book.Order;
 import dev.kaloyanyordanov.exchange.book.OrderBook;
 import dev.kaloyanyordanov.exchange.book.Symbol;
 import dev.kaloyanyordanov.exchange.book.Trade;
-import dev.kaloyanyordanov.exchange.ledger.Account;
 import dev.kaloyanyordanov.exchange.ledger.LedgerView;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.Duration;
@@ -247,15 +246,28 @@ public final class MatchingEngine {
   }
 
   private EngineSnapshot buildSnapshot() {
-    List<Account> accounts = new ArrayList<>();
+    List<AccountBalance> accounts = new ArrayList<>();
     if (ledgerView != null) {
       for (long accountId : ledgerView.accountIds()) {
-        accounts.add(ledgerView.account(accountId));
+        accounts.add(
+            new AccountBalance(
+                accountId, ledgerView.cashOf(accountId), ledgerView.assetOf(accountId)));
       }
+    }
+    List<RestingOrder> resting = new ArrayList<>();
+    for (Order order : book.restingOrders()) {
+      resting.add(
+          new RestingOrder(
+              order.id().value(),
+              order.side(),
+              order.price(),
+              order.quantity(),
+              order.remaining(),
+              order.sequence()));
     }
     return new EngineSnapshot(
         book.snapshot(),
-        book.restingOrders(),
+        resting,
         accounts,
         initialTotalCash,
         initialTotalAsset,

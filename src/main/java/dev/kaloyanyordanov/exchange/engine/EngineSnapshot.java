@@ -1,17 +1,17 @@
 package dev.kaloyanyordanov.exchange.engine;
 
 import dev.kaloyanyordanov.exchange.book.BookSnapshot;
-import dev.kaloyanyordanov.exchange.book.Order;
-import dev.kaloyanyordanov.exchange.ledger.Account;
 import java.util.List;
 
 /**
  * An immutable, internally-consistent view of the engine's state, captured on the
  * matching thread between commands. It carries everything the invariant checker
- * needs, so the checker never touches the live book or ledger (§4.4).
+ * needs, so the checker never touches the live book or ledger (§4.4). Balances and
+ * resting orders are raw records so the checker can be tested against corrupted
+ * snapshots.
  *
  * @param book                       aggregated book levels (best-first per side)
- * @param restingOrders              every resting order (per-order, for overfill/FIFO checks)
+ * @param restingOrders              every resting order (for overfill/FIFO checks)
  * @param accounts                   every account's balances
  * @param initialTotalCash           total cash at engine start
  * @param initialTotalAsset          total asset at engine start
@@ -22,8 +22,8 @@ import java.util.List;
  */
 public record EngineSnapshot(
     BookSnapshot book,
-    List<Order> restingOrders,
-    List<Account> accounts,
+    List<RestingOrder> restingOrders,
+    List<AccountBalance> accounts,
     long initialTotalCash,
     long initialTotalAsset,
     long cumulativeCashFromBuyers,

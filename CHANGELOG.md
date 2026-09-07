@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   initial + cumulative totals) **on the matching thread**. `requestSnapshot`
   submits through the real ingress and polls for the result — the checker never
   touches the live book or ledger (§4.4).
+- `InvariantChecker`: a pure function over an `EngineSnapshot` producing a
+  `CheckReport` of per-invariant pass/fail for all seven invariants (cash/asset
+  conservation, no negative balances, no overfill, price-time priority, book not
+  crossed, trades balance). Snapshots use raw (unvalidated) balance/order records
+  so the checker is **proven to detect** a deliberately corrupted snapshot for
+  every invariant — not just to pass (§5).
 
 - **Phase 7 — simulator metric core.** `LatencyPercentiles` (pure, deterministic
   nearest-rank) and a bounded, thread-safe `PercentileTracker` producing a
