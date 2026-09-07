@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runtime and returns a generated API key **once** (only its bcrypt hash is kept);
   new accounts start at zero. Identity is in-memory (registered accounts do not
   survive a restart); persisting identity is out of v1 scope.
+- `PaymentProvider` seam with a single `DemoPaymentProvider` — instant, simulated
+  success, **no real money, no external call**. A real adapter would implement the
+  interface but is deliberately out of scope. Fail-secure: the demo provider is
+  the default unless a real one is explicitly configured (and none exists).
 
 - **Phase 8 — consistent engine snapshot.** A `LedgerView` lets the engine
   enumerate all accounts and totals; the engine tracks cumulative trade totals

@@ -11,6 +11,8 @@ import dev.kaloyanyordanov.exchange.engine.MarketDataCache;
 import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
 import dev.kaloyanyordanov.exchange.invariant.InvariantMonitor;
 import dev.kaloyanyordanov.exchange.ledger.Ledger;
+import dev.kaloyanyordanov.exchange.payment.DemoPaymentProvider;
+import dev.kaloyanyordanov.exchange.payment.PaymentProvider;
 import dev.kaloyanyordanov.exchange.persistence.PersistenceWorker;
 import dev.kaloyanyordanov.exchange.realtime.MarketDataWebSocketHandler;
 import dev.kaloyanyordanov.exchange.realtime.ThrottledBroadcaster;
@@ -20,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -198,6 +201,19 @@ public class ExchangeConfiguration {
       @Value("${exchange.invariant.check-interval-millis:1000}") long intervalMillis,
       @Value("${exchange.invariant.snapshot-timeout-millis:2000}") long timeoutMillis) {
     return new InvariantMonitor(engine, intervalMillis, timeoutMillis);
+  }
+
+  /**
+   * The payment provider. Fail-secure: the demo provider is used unless a real
+   * one is explicitly configured as a bean (and none exists), so there is no path
+   * to real money.
+   *
+   * @return the payment provider
+   */
+  @Bean
+  @ConditionalOnMissingBean(PaymentProvider.class)
+  public PaymentProvider paymentProvider() {
+    return new DemoPaymentProvider();
   }
 
   /**
