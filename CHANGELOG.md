@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a jqwik property confirming random concurrent submission stays non-crossed
   and replay-identical. PIT scopes out these timing-dependent tests (they still
   run in full under surefire).
+- **Phase 3 — atomic ledger.** `Account` snapshot and `Ledger` (scaled-integer
+  cash + asset per account, owned by the matching thread). `Ledger` implements
+  `FillPolicy`: `maxBuyerUnits`/`maxSellerUnits` are the serial pre-trade check;
+  `onFill` settles equal-and-opposite with exact arithmetic. No lock — atomic by
+  virtue of running only on the matching thread.
 - Phase 1 jqwik property tests over random order sequences, one per invariant:
   book never crossed (INV-4), price-time priority — first fill hits the best,
   earliest resting order (INV-5), no overfill (INV-6), and matching quantity
