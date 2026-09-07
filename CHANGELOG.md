@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Flyway `V2`): type (deposit/withdrawal), account, scaled-integer amount, the
   resulting cash balance, the provider reference, and a write timestamp. The async
   persistence worker records them off the matching thread, like the trade tape.
+- Authenticated funding endpoints: `POST /accounts/deposit` (202 once authorized
+  and enqueued) and `POST /accounts/withdraw` (200 applied, 422 insufficient
+  funds), both scaled-integer amounts, behind the API-key filter.
 
 - **Phase 8 — consistent engine snapshot.** A `LedgerView` lets the engine
   enumerate all accounts and totals; the engine tracks cumulative trade totals

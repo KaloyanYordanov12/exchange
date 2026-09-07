@@ -3,6 +3,7 @@ package dev.kaloyanyordanov.exchange.api;
 import dev.kaloyanyordanov.exchange.book.BookSnapshot;
 import dev.kaloyanyordanov.exchange.book.Side;
 import dev.kaloyanyordanov.exchange.ledger.Account;
+import dev.kaloyanyordanov.exchange.payment.FundingResult;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Locale;
 import java.util.Map;
@@ -81,6 +82,61 @@ public class ExchangeController {
     long accountId = accountId(http);
     Account account = service.balance(accountId).orElseGet(() -> new Account(accountId, 0L, 0L));
     return new BalanceResponse(accountId, account.cash(), account.asset());
+  }
+
+  /**
+   * Deposits cash into the authenticated account (demo payment provider).
+   *
+   * @param request the amount to deposit
+   * @param http    the servlet request carrying the resolved account id
+   * @return 202 accepted once authorized and enqueued, or 400 on a non-positive
+   *     amount
+   */
+  @PostMapping("/accounts/deposit")
+  public ResponseEntity<Object> deposit(
+      @RequestBody FundingRequest request, HttpServletRequest http) {
+    if (request.amount() <= 0) {
+      return ResponseEntity.badRequest().body(Map.of("error", "amount must be positive"));
+    }
+    long accountId = accountId(http);
+    return fundingResponse(
+        accountId, request.amount(), service.deposit(accountId, request.amount()));
+  }
+
+  /**
+   * Withdraws cash from the authenticated account. The debit is atomic on the
+   * matching thread, so it can never over-draw committed funds or go negative.
+   *
+   * @param request the amount to withdraw
+   * @param http    the servlet request carrying the resolved account id
+   * @return 200 on success, 422 on insufficient funds, or 400 on a non-positive
+   *     amount
+   */
+  @PostMapping("/accounts/withdraw")
+  public ResponseEntity<Object> withdraw(
+      @RequestBody FundingRequest request, HttpServletRequest http) {
+    if (request.amount() <= 0) {
+      return ResponseEntity.badRequest().body(Map.of("error", "amount must be positive"));
+    }
+    long accountId = accountId(http);
+    return fundingResponse(
+        accountId, request.amount(), service.withdraw(accountId, request.amount()));
+  }
+
+  private static ResponseEntity<Object> fundingResponse(
+      long accountId, long amount, FundingResult result) {
+    HttpStatus status =
+        switch (result.status()) {
+          case ACCEPTED -> HttpStatus.ACCEPTED;
+          case APPLIED -> HttpStatus.OK;
+          case INSUFFICIENT_FUNDS -> HttpStatus.UNPROCESSABLE_ENTITY;
+          case PROVIDER_DECLINED -> HttpStatus.BAD_GATEWAY;
+          case UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
+        };
+    return ResponseEntity.status(status)
+        .body(
+            new FundingResponse(
+                accountId, amount, result.status().name(), result.reference()));
   }
 
   private static long accountId(HttpServletRequest http) {

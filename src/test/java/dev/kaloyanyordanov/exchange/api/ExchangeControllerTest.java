@@ -13,6 +13,8 @@ import dev.kaloyanyordanov.exchange.book.BookSnapshot;
 import dev.kaloyanyordanov.exchange.book.PriceLevel;
 import dev.kaloyanyordanov.exchange.book.Side;
 import dev.kaloyanyordanov.exchange.ledger.Account;
+import dev.kaloyanyordanov.exchange.payment.FundingResult;
+import dev.kaloyanyordanov.exchange.payment.FundingStatus;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -125,5 +127,66 @@ class ExchangeControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.cash").value(0))
         .andExpect(jsonPath("$.asset").value(0));
+  }
+
+  @Test
+  void acceptedDepositReturns202() throws Exception {
+    when(service.deposit(1L, 500L))
+        .thenReturn(new FundingResult(FundingStatus.ACCEPTED, "demo-deposit-1"));
+
+    mockMvc
+        .perform(
+            post("/accounts/deposit")
+                .requestAttr(ApiKeyAuthFilter.ACCOUNT_ATTRIBUTE, 1L)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\":500}"))
+        .andExpect(status().isAccepted())
+        .andExpect(jsonPath("$.accountId").value(1))
+        .andExpect(jsonPath("$.amount").value(500))
+        .andExpect(jsonPath("$.status").value("ACCEPTED"))
+        .andExpect(jsonPath("$.reference").value("demo-deposit-1"));
+  }
+
+  @Test
+  void nonPositiveDepositReturns400() throws Exception {
+    mockMvc
+        .perform(
+            post("/accounts/deposit")
+                .requestAttr(ApiKeyAuthFilter.ACCOUNT_ATTRIBUTE, 1L)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\":0}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error").value("amount must be positive"));
+  }
+
+  @Test
+  void appliedWithdrawalReturns200() throws Exception {
+    when(service.withdraw(1L, 200L))
+        .thenReturn(new FundingResult(FundingStatus.APPLIED, "demo-withdrawal-1"));
+
+    mockMvc
+        .perform(
+            post("/accounts/withdraw")
+                .requestAttr(ApiKeyAuthFilter.ACCOUNT_ATTRIBUTE, 1L)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\":200}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("APPLIED"))
+        .andExpect(jsonPath("$.reference").value("demo-withdrawal-1"));
+  }
+
+  @Test
+  void insufficientFundsWithdrawalReturns422() throws Exception {
+    when(service.withdraw(1L, 9_999L))
+        .thenReturn(new FundingResult(FundingStatus.INSUFFICIENT_FUNDS, "demo-withdrawal-2"));
+
+    mockMvc
+        .perform(
+            post("/accounts/withdraw")
+                .requestAttr(ApiKeyAuthFilter.ACCOUNT_ATTRIBUTE, 1L)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\":9999}"))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.status").value("INSUFFICIENT_FUNDS"));
   }
 }

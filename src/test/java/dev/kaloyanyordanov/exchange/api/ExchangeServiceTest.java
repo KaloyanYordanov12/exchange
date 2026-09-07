@@ -15,6 +15,9 @@ import dev.kaloyanyordanov.exchange.engine.MarketDataCache;
 import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
 import dev.kaloyanyordanov.exchange.engine.SubmitResult;
 import dev.kaloyanyordanov.exchange.ledger.Account;
+import dev.kaloyanyordanov.exchange.payment.FundingResult;
+import dev.kaloyanyordanov.exchange.payment.FundingStatus;
+import dev.kaloyanyordanov.exchange.payment.PaymentService;
 import org.junit.jupiter.api.Test;
 
 class ExchangeServiceTest {
@@ -24,7 +27,9 @@ class ExchangeServiceTest {
 
   private final MatchingEngine engine = mock(MatchingEngine.class);
   private final MarketDataCache cache = new MarketDataCache();
-  private final ExchangeService service = new ExchangeService(engine, cache, SYMBOL);
+  private final PaymentService paymentService = mock(PaymentService.class);
+  private final ExchangeService service =
+      new ExchangeService(engine, cache, paymentService, SYMBOL);
 
   @Test
   void validOrderIsEnqueuedAndAssignedAnIncrementingId() {
@@ -78,5 +83,21 @@ class ExchangeServiceTest {
     cache.seedAccount(9L, 500L, 20L);
     assertThat(service.balance(9L)).contains(new Account(9L, 500L, 20L));
     assertThat(service.book().bids()).isEmpty();
+  }
+
+  @Test
+  void depositDelegatesToThePaymentService() {
+    FundingResult expected = new FundingResult(FundingStatus.ACCEPTED, "demo-deposit-1");
+    when(paymentService.deposit(9L, 500L)).thenReturn(expected);
+    assertThat(service.deposit(9L, 500L)).isSameAs(expected);
+    verify(paymentService).deposit(9L, 500L);
+  }
+
+  @Test
+  void withdrawDelegatesToThePaymentService() {
+    FundingResult expected = new FundingResult(FundingStatus.APPLIED, "demo-withdrawal-1");
+    when(paymentService.withdraw(9L, 200L)).thenReturn(expected);
+    assertThat(service.withdraw(9L, 200L)).isSameAs(expected);
+    verify(paymentService).withdraw(9L, 200L);
   }
 }

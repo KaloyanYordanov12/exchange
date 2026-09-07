@@ -9,6 +9,8 @@ import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
 import dev.kaloyanyordanov.exchange.engine.SubmitOrder;
 import dev.kaloyanyordanov.exchange.engine.SubmitResult;
 import dev.kaloyanyordanov.exchange.ledger.Account;
+import dev.kaloyanyordanov.exchange.payment.FundingResult;
+import dev.kaloyanyordanov.exchange.payment.PaymentService;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.stereotype.Service;
@@ -24,19 +26,26 @@ public class ExchangeService {
 
   private final MatchingEngine engine;
   private final MarketDataCache marketData;
+  private final PaymentService paymentService;
   private final Symbol symbol;
   private final AtomicLong nextOrderId = new AtomicLong();
 
   /**
    * Creates the gateway.
    *
-   * @param engine     the matching engine
-   * @param marketData the read model
-   * @param symbol     the traded symbol
+   * @param engine         the matching engine
+   * @param marketData     the read model
+   * @param paymentService the deposit/withdrawal orchestrator
+   * @param symbol         the traded symbol
    */
-  public ExchangeService(MatchingEngine engine, MarketDataCache marketData, Symbol symbol) {
+  public ExchangeService(
+      MatchingEngine engine,
+      MarketDataCache marketData,
+      PaymentService paymentService,
+      Symbol symbol) {
     this.engine = engine;
     this.marketData = marketData;
+    this.paymentService = paymentService;
     this.symbol = symbol;
   }
 
@@ -66,6 +75,30 @@ public class ExchangeService {
       case ENQUEUED -> PlacementOutcome.accepted(orderId);
       case REJECTED_BUSY, REJECTED_NOT_RUNNING -> PlacementOutcome.busy();
     };
+  }
+
+  /**
+   * Deposits cash into an account via the payment provider and the serial funding
+   * path.
+   *
+   * @param accountId the account to credit
+   * @param amount    the amount in scaled integer quote units; must be positive
+   * @return the funding result
+   */
+  public FundingResult deposit(long accountId, long amount) {
+    return paymentService.deposit(accountId, amount);
+  }
+
+  /**
+   * Withdraws cash from an account via the serial funding path (the debit is atomic
+   * on the matching thread) and the payment provider.
+   *
+   * @param accountId the account to debit
+   * @param amount    the amount in scaled integer quote units; must be positive
+   * @return the funding result
+   */
+  public FundingResult withdraw(long accountId, long amount) {
+    return paymentService.withdraw(accountId, amount);
   }
 
   /**
