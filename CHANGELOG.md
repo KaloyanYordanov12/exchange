@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `notional`). No floating point anywhere in the domain.
 - PIT mutation testing is now **enforced**: `mutationCoverage` bound to `verify`
   with a 70% threshold (the Phase 0 deferral is lifted).
+- `OrderBook`: bids highest-first, asks lowest-first (`TreeMap`), FIFO time
+  priority within a level (`ArrayDeque`); best bid/ask, crossed check, immutable
+  aggregated `snapshot()`. Non-concurrent by design — owned by one thread.
 
 - Maven + Spring Boot 4.1.1 project scaffold on Java 25 (Temurin), with the
   Maven wrapper and empty feature packages (`book`, `engine`, `ledger`, `api`,
