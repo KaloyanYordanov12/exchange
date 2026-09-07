@@ -67,6 +67,12 @@
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
+        <!-- Boot 4's starter-data-jpa does not bring the Flyway auto-config
+             module; it must be added explicitly for Flyway to run migrations. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-flyway</artifactId>
+        </dependency>
         <!-- SpotBugs annotations: enables the sanctioned inline @SuppressFBWarnings
              with written justification. Provided scope (compile-time only). -->
         <dependency>
@@ -96,6 +102,23 @@
             <version>1.10.1</version>
             <scope>test</scope>
         </dependency>
+        <!-- Testcontainers: real Postgres for the persistence integration test.
+             Versions managed by the Spring Boot BOM. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -119,6 +142,12 @@
                         <include>**/*TestCase.java</include>
                         <include>**/*Properties.java</include>
                     </includes>
+                    <!-- Run tests in UTC: this host's default zone is the retired
+                         "Europe/Kiev", which modern Postgres (Testcontainers)
+                         rejects at connection time. -->
+                    <systemPropertyVariables>
+                        <user.timezone>UTC</user.timezone>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
 
@@ -276,6 +305,8 @@
                              standalone/unit tests kill the API-layer mutants. -->
                         <param>*ApiIntegrationTest</param>
                         <param>*WebSocketIntegrationTest</param>
+                        <param>*PostgresIntegrationTest</param>
+                        <param>*OffHotPathTest</param>
                     </excludedTestClasses>
                     <outputFormats>
                         <param>HTML</param>

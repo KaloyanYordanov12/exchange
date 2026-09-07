@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repositories, and a `PersistenceWorker` that maps the audit stream to entities
   and writes them in batched transactions on its own thread. Added to the event
   fan-out only when the profile is active.
+- Persistence proven: a Testcontainers Postgres integration test shows orders,
+  trades, and account snapshots are durably recorded via the async worker (Flyway
+  builds the schema); and an off-hot-path test shows that with the consumer's
+  handler blocked (a stalled DB), the engine still processes every order promptly
+  while events queue for the worker — matching throughput is independent of DB
+  latency. Boot 4 needs the `spring-boot-flyway` module explicitly for Flyway to
+  run; tests execute in UTC (this host's zone is the retired "Europe/Kiev").
 
 - **Phase 5 — throttled broadcaster core.** `ThrottledBroadcaster` consumes the
   event stream on the matching thread with only lock-free work (coalesce the
