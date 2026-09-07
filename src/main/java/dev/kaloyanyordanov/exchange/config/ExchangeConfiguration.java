@@ -13,11 +13,13 @@ import dev.kaloyanyordanov.exchange.invariant.InvariantMonitor;
 import dev.kaloyanyordanov.exchange.ledger.Ledger;
 import dev.kaloyanyordanov.exchange.payment.DemoPaymentProvider;
 import dev.kaloyanyordanov.exchange.payment.PaymentProvider;
+import dev.kaloyanyordanov.exchange.payment.PaymentService;
 import dev.kaloyanyordanov.exchange.persistence.PersistenceWorker;
 import dev.kaloyanyordanov.exchange.realtime.MarketDataWebSocketHandler;
 import dev.kaloyanyordanov.exchange.realtime.ThrottledBroadcaster;
 import dev.kaloyanyordanov.exchange.sim.LoadSimulator;
 import dev.kaloyanyordanov.exchange.sim.SimulatorMetricsSink;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.ObjectProvider;
@@ -214,6 +216,23 @@ public class ExchangeConfiguration {
   @ConditionalOnMissingBean(PaymentProvider.class)
   public PaymentProvider paymentProvider() {
     return new DemoPaymentProvider();
+  }
+
+  /**
+   * The payment service orchestrating deposits and withdrawals across the provider
+   * and the matching thread.
+   *
+   * @param provider              the payment provider
+   * @param engine                the matching engine
+   * @param withdrawalTimeoutMillis how long to wait for a withdrawal outcome
+   * @return the payment service
+   */
+  @Bean
+  public PaymentService paymentService(
+      PaymentProvider provider,
+      MatchingEngine engine,
+      @Value("${exchange.payment.withdrawal-timeout-millis:2000}") long withdrawalTimeoutMillis) {
+    return new PaymentService(provider, engine, Duration.ofMillis(withdrawalTimeoutMillis));
   }
 
   /**

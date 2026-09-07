@@ -17,7 +17,7 @@ import java.util.Set;
  * caps a fill to what the buyer can pay and {@link #maxSellerUnits} to what the
  * seller can deliver, so a settlement can never drive a balance negative.
  */
-public final class Ledger implements FillPolicy, LedgerView {
+public final class Ledger implements FillPolicy, AccountLedger {
 
   /** Mutable per-account position; mutated only on the matching thread. */
   private static final class Position {
@@ -42,6 +42,28 @@ public final class Ledger implements FillPolicy, LedgerView {
     Position position = positions.computeIfAbsent(accountId, id -> new Position());
     position.cash = Math.addExact(position.cash, cash);
     position.asset = Math.addExact(position.asset, asset);
+  }
+
+  @Override
+  public void creditCash(long accountId, long amount) {
+    if (amount <= 0) {
+      throw new IllegalArgumentException("credit amount must be positive: " + amount);
+    }
+    Position position = positions.computeIfAbsent(accountId, id -> new Position());
+    position.cash = Math.addExact(position.cash, amount);
+  }
+
+  @Override
+  public boolean withdrawCash(long accountId, long amount) {
+    if (amount <= 0) {
+      throw new IllegalArgumentException("withdraw amount must be positive: " + amount);
+    }
+    Position position = positions.get(accountId);
+    if (position == null || position.cash < amount) {
+      return false;
+    }
+    position.cash = Math.subtractExact(position.cash, amount);
+    return true;
   }
 
   /**

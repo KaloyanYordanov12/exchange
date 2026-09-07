@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   success, **no real money, no external call**. A real adapter would implement the
   interface but is deliberately out of scope. Fail-secure: the demo provider is
   the default unless a real one is explicitly configured (and none exists).
+- Deposits and withdrawals are applied as serial, audited events **on the matching
+  thread**: new `DepositCash`/`WithdrawCash` commands and `CashDeposited`/
+  `CashWithdrawn` events, with `AccountLedger.creditCash`/`withdrawCash`. A
+  withdrawal's sufficient-funds check and debit are atomic on that thread, so it
+  can never over-draw committed funds or drive a balance negative. `PaymentService`
+  orchestrates provider authorization with the serial balance change (the engine is
+  the sole authority on funds); the demo provider moves no real money.
 
 - **Phase 8 — consistent engine snapshot.** A `LedgerView` lets the engine
   enumerate all accounts and totals; the engine tracks cumulative trade totals

@@ -5,5 +5,5 @@ package dev.kaloyanyordanov.exchange.engine;
  * applied, one at a time, by the single matching thread. Sealed so the matching
  * thread can exhaustively dispatch on the concrete command types.
  */
-public sealed interface Command permits SubmitOrder, SnapshotRequest {
+public sealed interface Command permits SubmitOrder, SnapshotRequest, DepositCash, WithdrawCash {
 }

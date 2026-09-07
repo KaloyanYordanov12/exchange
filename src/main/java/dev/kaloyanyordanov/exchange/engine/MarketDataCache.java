@@ -40,6 +40,12 @@ public final class MarketDataCache implements EventPublisher {
       case TradeExecuted ignored -> {
         // The trade tape is the broadcaster's concern.
       }
+      case CashDeposited ignored -> {
+        // The resulting balance arrives as an AccountUpdated event.
+      }
+      case CashWithdrawn ignored -> {
+        // The resulting balance arrives as an AccountUpdated event.
+      }
     }
   }
 
