@@ -37,3 +37,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs cleanly on Spring Boot 4's JUnit Platform 6.0.3. Surefire is configured
   to also include `*Properties.java` so property classes are not silently
   skipped by the default name filter (the correctness phases rely on this).
+- JCTools (`jctools-core` 4.0.7, compile scope) wired and proven runnable with a
+  unit test that offers and polls a `MpscArrayQueue<Long>` in FIFO order. This is
+  the ingress ring buffer for later phases.
