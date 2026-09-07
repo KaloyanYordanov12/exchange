@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trades. `SimulatorMetricsSink` measures submit-to-processed latency on the
   matching thread; `RunMetrics`/`MetricsSnapshot` report submitted/accepted/
   rejected/trades, throughput, and p50/p95/p99 — all from real measurement.
+- Admin-gated simulator control: `POST /admin/simulator/start` (202, 409 if a run
+  is active, 400 on bad config), `POST /admin/simulator/stop`, and
+  `GET /admin/simulator/metrics` — behind an `X-Admin-Key` bcrypt gate on
+  `/admin/*`. The metrics sink is wired into the event fan-out; a run is never a
+  CI gate (heavy load is manual), but the simulator's logic is fully unit-tested.
 
 - **Phase 6 — persistence groundwork.** `OrderAccepted` enriched to carry the
   full order (side/price/quantity/account) so the audit log is meaningful.

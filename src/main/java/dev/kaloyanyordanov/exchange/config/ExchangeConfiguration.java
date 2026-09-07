@@ -1,5 +1,6 @@
 package dev.kaloyanyordanov.exchange.config;
 
+import dev.kaloyanyordanov.exchange.api.AdminAuthFilter;
 import dev.kaloyanyordanov.exchange.api.ApiKeyAuthFilter;
 import dev.kaloyanyordanov.exchange.api.TraderRegistry;
 import dev.kaloyanyordanov.exchange.book.Symbol;
@@ -12,9 +13,12 @@ import dev.kaloyanyordanov.exchange.ledger.Ledger;
 import dev.kaloyanyordanov.exchange.persistence.PersistenceWorker;
 import dev.kaloyanyordanov.exchange.realtime.MarketDataWebSocketHandler;
 import dev.kaloyanyordanov.exchange.realtime.ThrottledBroadcaster;
+import dev.kaloyanyordanov.exchange.sim.LoadSimulator;
+import dev.kaloyanyordanov.exchange.sim.SimulatorMetricsSink;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -102,10 +106,52 @@ public class ExchangeConfiguration {
   public FanoutPublisher fanoutPublisher(
       MarketDataCache marketDataCache,
       ThrottledBroadcaster broadcaster,
+      SimulatorMetricsSink simulatorMetricsSink,
       ObjectProvider<PersistenceWorker> persistenceWorker) {
-    List<EventPublisher> sinks = new ArrayList<>(List.of(marketDataCache, broadcaster));
+    List<EventPublisher> sinks =
+        new ArrayList<>(List.of(marketDataCache, broadcaster, simulatorMetricsSink));
     persistenceWorker.ifAvailable(sinks::add);
     return new FanoutPublisher(sinks);
+  }
+
+  /**
+   * The simulator metrics sink (records processed events during a run).
+   *
+   * @return the metrics sink
+   */
+  @Bean
+  public SimulatorMetricsSink simulatorMetricsSink() {
+    return new SimulatorMetricsSink();
+  }
+
+  /**
+   * The load simulator, driving the engine through its real ingress.
+   *
+   * @param engine              the matching engine
+   * @param symbol              the traded symbol
+   * @param simulatorMetricsSink the metrics sink
+   * @return the load simulator
+   */
+  @Bean
+  public LoadSimulator loadSimulator(
+      MatchingEngine engine, Symbol symbol, SimulatorMetricsSink simulatorMetricsSink) {
+    return new LoadSimulator(engine, symbol, simulatorMetricsSink);
+  }
+
+  /**
+   * Registers the admin auth filter on the admin surface.
+   *
+   * @param adminKeyHash the bcrypt hash of the admin key
+   * @return the filter registration
+   */
+  @Bean
+  public FilterRegistrationBean<AdminAuthFilter> adminAuthFilter(
+      @Value("${exchange.admin.api-key-hash:}") String adminKeyHash) {
+    FilterRegistrationBean<AdminAuthFilter> registration =
+        new FilterRegistrationBean<>(new AdminAuthFilter(adminKeyHash));
+    registration.addUrlPatterns("/admin/*");
+    registration.setName("adminAuthFilter");
+    return registration;
   }
 
   /**

@@ -25,6 +25,7 @@ class ExchangeApiIntegrationTest {
 
   private static final String ALICE_KEY = "demo-alice-key";
   private static final String BOB_KEY = "demo-bob-key";
+  private static final String ADMIN_KEY = "demo-admin-key";
 
   @Autowired private MockMvc mockMvc;
 
@@ -57,6 +58,38 @@ class ExchangeApiIntegrationTest {
         .andExpect(jsonPath("$.accountId").value(1))
         .andExpect(jsonPath("$.cash").isNumber())
         .andExpect(jsonPath("$.asset").isNumber());
+  }
+
+  @Test
+  void adminSurfaceRequiresTheAdminKey() throws Exception {
+    mockMvc.perform(get("/admin/simulator/metrics")).andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void adminCanDriveTheSimulatorAndReadRealMetrics() throws Exception {
+    String start =
+        "{\"traderCount\":2,\"ordersPerTrader\":10,\"orderRatePerSecond\":0,"
+            + "\"durationMillis\":10000,\"midPrice\":100,\"priceSpreadTicks\":5,"
+            + "\"minQuantity\":1,\"maxQuantity\":3,\"randomSeed\":1,\"maxLatencySamples\":100000}";
+    mockMvc
+        .perform(
+            post("/admin/simulator/start")
+                .header(AdminAuthFilter.ADMIN_KEY_HEADER, ADMIN_KEY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(start))
+        .andExpect(status().isAccepted());
+
+    // The simulator drove the real engine; metrics show real, measured activity.
+    await()
+        .atMost(Duration.ofSeconds(15))
+        .untilAsserted(
+            () ->
+                mockMvc
+                    .perform(
+                        get("/admin/simulator/metrics")
+                            .header(AdminAuthFilter.ADMIN_KEY_HEADER, ADMIN_KEY))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.accepted").value(20)));
   }
 
   @Test

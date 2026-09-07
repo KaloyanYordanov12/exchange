@@ -3,6 +3,7 @@ package dev.kaloyanyordanov.exchange.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import dev.kaloyanyordanov.exchange.api.AdminAuthFilter;
 import dev.kaloyanyordanov.exchange.api.ApiKeyAuthFilter;
 import dev.kaloyanyordanov.exchange.api.TraderRegistry;
 import dev.kaloyanyordanov.exchange.book.BookSnapshot;
@@ -19,6 +20,8 @@ import dev.kaloyanyordanov.exchange.ledger.Ledger;
 import dev.kaloyanyordanov.exchange.persistence.PersistenceWorker;
 import dev.kaloyanyordanov.exchange.realtime.MarketDataWebSocketHandler;
 import dev.kaloyanyordanov.exchange.realtime.ThrottledBroadcaster;
+import dev.kaloyanyordanov.exchange.sim.LoadSimulator;
+import dev.kaloyanyordanov.exchange.sim.SimulatorMetricsSink;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -76,7 +79,8 @@ class ExchangeConfigurationTest {
         configuration.matchingEngine(
             configuration.symbol(PROPERTIES),
             PROPERTIES,
-            configuration.fanoutPublisher(new MarketDataCache(), broadcaster(), noPersistence()),
+            configuration.fanoutPublisher(
+                new MarketDataCache(), broadcaster(), new SimulatorMetricsSink(), noPersistence()),
             configuration.ledger(PROPERTIES));
     assertThat(engine.ingressCapacity()).isEqualTo(1024);
   }
@@ -85,10 +89,34 @@ class ExchangeConfigurationTest {
   void fanoutForwardsToTheReadModelAndBroadcaster() {
     MarketDataCache cache = new MarketDataCache();
     ThrottledBroadcaster broadcaster = broadcaster();
-    FanoutPublisher fanout = configuration.fanoutPublisher(cache, broadcaster, noPersistence());
+    FanoutPublisher fanout =
+        configuration.fanoutPublisher(
+            cache, broadcaster, new SimulatorMetricsSink(), noPersistence());
     BookSnapshot snapshot = new BookSnapshot(List.of(new PriceLevel(100L, 5L)), List.of());
     fanout.publish(new BookChanged(snapshot));
     assertThat(cache.book()).isEqualTo(snapshot);
+  }
+
+  @Test
+  void adminFilterIsScopedToAdminSurface() {
+    FilterRegistrationBean<AdminAuthFilter> registration =
+        configuration.adminAuthFilter("$2a$10$hash");
+    assertThat(registration.getUrlPatterns()).containsExactly("/admin/*");
+  }
+
+  @Test
+  void loadSimulatorIsBuilt() {
+    MatchingEngine engine =
+        configuration.matchingEngine(
+            configuration.symbol(PROPERTIES),
+            PROPERTIES,
+            configuration.fanoutPublisher(
+                new MarketDataCache(), broadcaster(), new SimulatorMetricsSink(), noPersistence()),
+            configuration.ledger(PROPERTIES));
+    LoadSimulator simulator =
+        configuration.loadSimulator(
+            engine, configuration.symbol(PROPERTIES), new SimulatorMetricsSink());
+    assertThat(simulator.isRunning()).isFalse();
   }
 
   @Test
