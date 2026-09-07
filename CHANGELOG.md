@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   crossed, trades balance). Snapshots use raw (unvalidated) balance/order records
   so the checker is **proven to detect** a deliberately corrupted snapshot for
   every invariant — not just to pass (§5).
+- `InvariantMonitor` runs the checker on demand and continuously (a lightweight
+  periodic check that requests a snapshot through the real ingress, never
+  affecting matching). A **public, read-only** panel exposes it: `GET /invariants`
+  (latest verdict, cheap) and `GET /invariants/check` (fresh) — a visitor can
+  watch all seven invariants stay green under load with no admin control.
 
 - **Phase 7 — simulator metric core.** `LatencyPercentiles` (pure, deterministic
   nearest-rank) and a bounded, thread-safe `PercentileTracker` producing a

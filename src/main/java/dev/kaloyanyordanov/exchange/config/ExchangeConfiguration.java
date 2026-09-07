@@ -9,6 +9,7 @@ import dev.kaloyanyordanov.exchange.engine.EventPublisher;
 import dev.kaloyanyordanov.exchange.engine.FanoutPublisher;
 import dev.kaloyanyordanov.exchange.engine.MarketDataCache;
 import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
+import dev.kaloyanyordanov.exchange.invariant.InvariantMonitor;
 import dev.kaloyanyordanov.exchange.ledger.Ledger;
 import dev.kaloyanyordanov.exchange.persistence.PersistenceWorker;
 import dev.kaloyanyordanov.exchange.realtime.MarketDataWebSocketHandler;
@@ -181,6 +182,22 @@ public class ExchangeConfiguration {
   public MatchingEngine matchingEngine(
       Symbol symbol, ExchangeProperties properties, FanoutPublisher publisher, Ledger ledger) {
     return new MatchingEngine(symbol, properties.ingressCapacity(), publisher, ledger, ledger);
+  }
+
+  /**
+   * The invariant monitor, checking the seven invariants continuously.
+   *
+   * @param engine        the matching engine
+   * @param intervalMillis the continuous check interval
+   * @param timeoutMillis  the per-check snapshot timeout
+   * @return the invariant monitor
+   */
+  @Bean(initMethod = "start", destroyMethod = "stop")
+  public InvariantMonitor invariantMonitor(
+      MatchingEngine engine,
+      @Value("${exchange.invariant.check-interval-millis:1000}") long intervalMillis,
+      @Value("${exchange.invariant.snapshot-timeout-millis:2000}") long timeoutMillis) {
+    return new InvariantMonitor(engine, intervalMillis, timeoutMillis);
   }
 
   /**

@@ -61,6 +61,16 @@ class ExchangeApiIntegrationTest {
   }
 
   @Test
+  void invariantPanelIsPublicAndGreen() throws Exception {
+    // No auth: a visitor can watch the invariants. A fresh check holds.
+    mockMvc
+        .perform(get("/invariants/check"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.available").value(true))
+        .andExpect(jsonPath("$.allPassed").value(true));
+  }
+
+  @Test
   void adminSurfaceRequiresTheAdminKey() throws Exception {
     mockMvc.perform(get("/admin/simulator/metrics")).andExpect(status().isUnauthorized());
   }
