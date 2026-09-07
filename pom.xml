@@ -31,6 +31,10 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
         <!-- Lock-free MPSC ring buffer for the ingress queue (LMAX pattern):
              many producers offer, the single matching thread drains. -->
         <dependency>
@@ -252,6 +256,7 @@
                              mutation analysis (still run under surefire). Fast
                              standalone/unit tests kill the API-layer mutants. -->
                         <param>*ApiIntegrationTest</param>
+                        <param>*WebSocketIntegrationTest</param>
                     </excludedTestClasses>
                     <outputFormats>
                         <param>HTML</param>

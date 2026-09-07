@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   each client behind its own bounded buffer + drain thread, so a slow socket
   drops/coalesces its own backlog and never stalls the flusher, other clients, or
   the engine. A `JsonSerializer` seam keeps serialization off the stored state.
+- WebSocket transport at `/ws/marketdata` (`spring-boot-starter-websocket`): each
+  session becomes an isolated `AsyncClientConnection`, registered with the
+  broadcaster and added to the event fan-out. Proven end-to-end (a real client
+  receives coalesced book snapshots and a batched trade tape), and that a flood
+  of engine events collapses to one snapshot per flush while the engine still
+  processes every order.
 
 - **Phase 4 — API egress backbone.** `AccountUpdated` event emitted on the
   matching thread after settlement (pure egress; matching behaviour and

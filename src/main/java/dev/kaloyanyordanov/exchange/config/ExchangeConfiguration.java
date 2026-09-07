@@ -9,11 +9,14 @@ import dev.kaloyanyordanov.exchange.engine.FanoutPublisher;
 import dev.kaloyanyordanov.exchange.engine.MarketDataCache;
 import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
 import dev.kaloyanyordanov.exchange.ledger.Ledger;
+import dev.kaloyanyordanov.exchange.realtime.MarketDataWebSocketHandler;
+import dev.kaloyanyordanov.exchange.realtime.ThrottledBroadcaster;
 import java.util.List;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Wires the engine, ledger, read model, and API. The matching engine is started
@@ -67,15 +70,48 @@ public class ExchangeConfiguration {
   }
 
   /**
-   * Fans engine events out to the read model (broadcaster and persistence sinks
-   * are added in later phases).
+   * The throttling broadcaster, started/stopped with the application context.
+   *
+   * @param mapper     the JSON serializer source
+   * @param properties the exchange configuration
+   * @return the broadcaster
+   */
+  @Bean(initMethod = "start", destroyMethod = "stop")
+  public ThrottledBroadcaster broadcaster(ObjectMapper mapper, ExchangeProperties properties) {
+    ExchangeProperties.BroadcastProperties broadcast = properties.broadcast();
+    return new ThrottledBroadcaster(
+        mapper::writeValueAsString,
+        broadcast.bookHertz(),
+        broadcast.maxTradesPerFlush(),
+        broadcast.tapeCapacity());
+  }
+
+  /**
+   * Fans engine events out to the read model and the broadcaster (the persistence
+   * sink is added in Phase 6).
    *
    * @param marketDataCache the read model sink
+   * @param broadcaster     the broadcast sink
    * @return the fan-out publisher
    */
   @Bean
-  public FanoutPublisher fanoutPublisher(MarketDataCache marketDataCache) {
-    return new FanoutPublisher(List.<EventPublisher>of(marketDataCache));
+  public FanoutPublisher fanoutPublisher(
+      MarketDataCache marketDataCache, ThrottledBroadcaster broadcaster) {
+    return new FanoutPublisher(List.<EventPublisher>of(marketDataCache, broadcaster));
+  }
+
+  /**
+   * The market-data WebSocket handler.
+   *
+   * @param broadcaster the broadcaster
+   * @param properties  the exchange configuration
+   * @return the handler
+   */
+  @Bean
+  public MarketDataWebSocketHandler marketDataWebSocketHandler(
+      ThrottledBroadcaster broadcaster, ExchangeProperties properties) {
+    return new MarketDataWebSocketHandler(
+        broadcaster, properties.broadcast().clientBufferSize());
   }
 
   /**

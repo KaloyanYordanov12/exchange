@@ -15,9 +15,12 @@ import dev.kaloyanyordanov.exchange.engine.MarketDataCache;
 import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
 import dev.kaloyanyordanov.exchange.ledger.Account;
 import dev.kaloyanyordanov.exchange.ledger.Ledger;
+import dev.kaloyanyordanov.exchange.realtime.MarketDataWebSocketHandler;
+import dev.kaloyanyordanov.exchange.realtime.ThrottledBroadcaster;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import tools.jackson.databind.ObjectMapper;
 
 class ExchangeConfigurationTest {
 
@@ -25,9 +28,16 @@ class ExchangeConfigurationTest {
       new ExchangeProperties(
           new SymbolProperties("BTC", "USD", 5L, 2L),
           1_000,
-          List.of(new TraderProperties(1L, "hash", 500L, 20L)));
+          List.of(new TraderProperties(1L, "hash", 500L, 20L)),
+          null);
+
+  private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private final ExchangeConfiguration configuration = new ExchangeConfiguration();
+
+  private ThrottledBroadcaster broadcaster() {
+    return configuration.broadcaster(MAPPER, PROPERTIES);
+  }
 
   @Test
   void buildsSymbolFromProperties() {
@@ -57,18 +67,31 @@ class ExchangeConfigurationTest {
         configuration.matchingEngine(
             configuration.symbol(PROPERTIES),
             PROPERTIES,
-            configuration.fanoutPublisher(new MarketDataCache()),
+            configuration.fanoutPublisher(new MarketDataCache(), broadcaster()),
             configuration.ledger(PROPERTIES));
     assertThat(engine.ingressCapacity()).isEqualTo(1024);
   }
 
   @Test
-  void fanoutForwardsToTheReadModel() {
+  void fanoutForwardsToTheReadModelAndBroadcaster() {
     MarketDataCache cache = new MarketDataCache();
-    FanoutPublisher fanout = configuration.fanoutPublisher(cache);
+    ThrottledBroadcaster broadcaster = broadcaster();
+    FanoutPublisher fanout = configuration.fanoutPublisher(cache, broadcaster);
     BookSnapshot snapshot = new BookSnapshot(List.of(new PriceLevel(100L, 5L)), List.of());
     fanout.publish(new BookChanged(snapshot));
     assertThat(cache.book()).isEqualTo(snapshot);
+  }
+
+  @Test
+  void broadcasterIsBuilt() {
+    assertThat(broadcaster().clientCount()).isZero();
+  }
+
+  @Test
+  void webSocketHandlerIsBuilt() {
+    MarketDataWebSocketHandler handler =
+        configuration.marketDataWebSocketHandler(broadcaster(), PROPERTIES);
+    assertThat(handler.connectionCount()).isZero();
   }
 
   @Test
