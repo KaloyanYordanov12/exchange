@@ -33,6 +33,7 @@ class ExchangeConfigurationTest {
   private static final ExchangeProperties PROPERTIES =
       new ExchangeProperties(
           new SymbolProperties("BTC", "USD", 5L, 2L),
+          null,
           1_000,
           List.of(new TraderProperties(1L, "hash", 500L, 20L)),
           null);

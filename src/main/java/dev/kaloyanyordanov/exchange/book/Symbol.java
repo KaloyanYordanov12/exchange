@@ -29,6 +29,16 @@ public record Symbol(String base, String quote, long tickSize, long lotSize) {
   }
 
   /**
+   * A stable, URL-safe identifier for this pair, used to route operations to the
+   * right engine (e.g. {@code BTC-USD}).
+   *
+   * @return the pair id {@code base-quote}
+   */
+  public String pairId() {
+    return base + "-" + quote;
+  }
+
+  /**
    * Reports whether a price is a whole multiple of the tick size.
    *
    * @param price the price in scaled integer ticks

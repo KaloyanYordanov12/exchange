@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase M1 — multi-pair backend (in progress).** Five-pair configuration model:
+  `PairProperties` (base, quote, tick, lot, reference price) with a canonical
+  `Symbol.pairId()` for routing, and the five standard pairs — BTC/USD, ETH/USD,
+  SOL/USD, XRP/USD, DOGE/USD — as the default catalog, spanning five orders of price
+  magnitude (BTC ~10^10 down to DOGE ~10^4 micro-USD). Scaled-integer price and
+  notional math is proven exact at both the BTC and DOGE magnitudes.
 - **Phase M1 — multi-pair backend (in progress).** Shared cash owner: a
   `CashLedger` actor is the single owner of every account's cash (the quote
   currency), which — unlike per-pair asset holdings — is spendable on any pair and

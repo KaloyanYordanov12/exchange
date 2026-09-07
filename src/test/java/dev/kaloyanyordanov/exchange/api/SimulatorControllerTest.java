@@ -33,6 +33,7 @@ class SimulatorControllerTest {
     ExchangeProperties properties =
         new ExchangeProperties(
             new SymbolProperties("BTC", "USD", 1L, 1L),
+            null,
             1024,
             List.of(
                 new TraderProperties(1L, "h", 0L, 0L), new TraderProperties(2L, "h", 0L, 0L)),

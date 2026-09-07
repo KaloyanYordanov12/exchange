@@ -20,7 +20,7 @@ class ExchangePropertiesTest {
   void exposesConfiguredValues() {
     TraderProperties trader = new TraderProperties(1L, "$2a$hash", 1_000L, 50L);
     ExchangeProperties properties =
-        new ExchangeProperties(SYMBOL, 4096, List.of(trader), BROADCAST);
+        new ExchangeProperties(SYMBOL, null, 4096, List.of(trader), BROADCAST);
     assertThat(properties.symbol()).isEqualTo(SYMBOL);
     assertThat(properties.ingressCapacity()).isEqualTo(4096);
     assertThat(properties.traders()).containsExactly(trader);
@@ -33,13 +33,22 @@ class ExchangePropertiesTest {
 
   @Test
   void nullTradersBecomesEmpty() {
-    ExchangeProperties properties = new ExchangeProperties(SYMBOL, 16, null, BROADCAST);
+    ExchangeProperties properties = new ExchangeProperties(SYMBOL, null, 16, null, BROADCAST);
     assertThat(properties.traders()).isEmpty();
   }
 
   @Test
+  void nullPairsBecomesTheFiveStandardPairs() {
+    ExchangeProperties properties = new ExchangeProperties(SYMBOL, null, 16, List.of(), BROADCAST);
+    assertThat(properties.pairs()).isEqualTo(ExchangeProperties.STANDARD_PAIRS);
+    assertThat(properties.pairs()).hasSize(5);
+    assertThat(properties.pairs().stream().map(ExchangeProperties.PairProperties::pairId))
+        .containsExactly("BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD");
+  }
+
+  @Test
   void nullBroadcastBecomesDefaults() {
-    ExchangeProperties properties = new ExchangeProperties(SYMBOL, 16, List.of(), null);
+    ExchangeProperties properties = new ExchangeProperties(SYMBOL, null, 16, List.of(), null);
     assertThat(properties.broadcast().bookHertz()).isEqualTo(10);
     assertThat(properties.broadcast().maxTradesPerFlush()).isEqualTo(256);
     assertThat(properties.broadcast().tapeCapacity()).isEqualTo(1024);
@@ -59,7 +68,7 @@ class ExchangePropertiesTest {
   void traderListIsDefensivelyCopied() {
     List<TraderProperties> mutable = new ArrayList<>();
     mutable.add(new TraderProperties(1L, "h", 0L, 0L));
-    ExchangeProperties properties = new ExchangeProperties(SYMBOL, 16, mutable, BROADCAST);
+    ExchangeProperties properties = new ExchangeProperties(SYMBOL, null, 16, mutable, BROADCAST);
     mutable.clear();
     assertThat(properties.traders()).hasSize(1);
     assertThatThrownBy(() -> properties.traders().add(new TraderProperties(2L, "h", 0L, 0L)))
