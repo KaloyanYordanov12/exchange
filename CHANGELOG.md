@@ -32,3 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Phase 1, where the first real branching logic (the order book) appears. A
   health endpoint has no meaningful mutants, so a threshold here would be
   vacuous. This is the only pre-authorized Phase 0 gate deferral.
+- jqwik property-based testing wired (test scope, 1.10.1) and proven runnable
+  and counted inside `mvn verify` with a trivial overflow-safe property. jqwik
+  runs cleanly on Spring Boot 4's JUnit Platform 6.0.3. Surefire is configured
+  to also include `*Properties.java` so property classes are not silently
+  skipped by the default name filter (the correctness phases rely on this).
