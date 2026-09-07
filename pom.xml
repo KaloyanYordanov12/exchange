@@ -240,6 +240,10 @@
                     <excludedTestClasses>
                         <param>*ConcurrencyTest</param>
                         <param>*ConcurrencyProperties</param>
+                        <!-- Slow full-context Spring Boot tests: excluded from
+                             mutation analysis (still run under surefire). Fast
+                             standalone/unit tests kill the API-layer mutants. -->
+                        <param>*ApiIntegrationTest</param>
                     </excludedTestClasses>
                     <outputFormats>
                         <param>HTML</param>

@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Trader identity: `ExchangeProperties` (symbol, ingress capacity, trader roster)
   and a bcrypt-backed `TraderRegistry` that resolves a presented API key to an
   account id (`spring-security-crypto`). Identity only, not full auth.
+- REST API on virtual threads: `POST /orders` (submits to the ingress queue,
+  202 with order id, **503 when the queue is full**, 400 on invalid/misaligned
+  input), `GET /book` (public snapshot from the read model), `GET /accounts/me`
+  (the caller's balances). An `X-API-Key` auth filter attributes each order to
+  its account (401 on missing/invalid), scoped to `/orders` and `/accounts/*`.
+  Spring wiring funds the ledger and seeds the read model from config, then
+  starts/stops the engine with the context. Handlers never touch the book.
 
 - **Phase 1 — domain core (pure, single-threaded).** Immutable scaled-integer
   value types in `book`: `Side`, `Symbol` (tick/lot validation), `OrderId`,
