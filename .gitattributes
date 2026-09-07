@@ -1,0 +1,16 @@
+# Normalize text line endings on checkin.
+* text=auto
+
+# Shell scripts must keep LF or they break on Linux CI ("bad interpreter").
+*.sh    text eol=lf
+mvnw    text eol=lf
+
+# Windows scripts keep CRLF.
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
+# Binaries.
+*.jar   binary
+*.png   binary
+*.gif   binary
+*.ico   binary
