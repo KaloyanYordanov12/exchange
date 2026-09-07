@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `OrderBook`: bids highest-first, asks lowest-first (`TreeMap`), FIFO time
   priority within a level (`ArrayDeque`); best bid/ask, crossed check, immutable
   aggregated `snapshot()`. Non-concurrent by design — owned by one thread.
+- `Matcher`: pure, deterministic price-time-priority matching — best opposite
+  price first, then earliest at that price; executes at the maker price;
+  partial-fills; rests only non-crossing remainders (never leaves the book
+  crossed). `FillPolicy` hook injects affordability caps + immediate settlement
+  in Phase 3; Phase 1 runs `UNCONSTRAINED`.
 
 - Maven + Spring Boot 4.1.1 project scaffold on Java 25 (Temurin), with the
   Maven wrapper and empty feature packages (`book`, `engine`, `ledger`, `api`,
