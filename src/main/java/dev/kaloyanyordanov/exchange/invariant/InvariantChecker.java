@@ -38,13 +38,21 @@ public final class InvariantChecker {
   }
 
   private static InvariantResult checkCashConservation(EngineSnapshot snapshot) {
+    // Deposit-aware conservation: cash is created only by deposits and destroyed
+    // only by withdrawals; trades merely move it between accounts. So the total
+    // must equal the initial cash plus everything deposited minus everything
+    // withdrawn — never off by a fill.
     long total = snapshot.accounts().stream().mapToLong(AccountBalance::cash).sum();
-    if (total == snapshot.initialTotalCash()) {
+    long expected =
+        snapshot.initialTotalCash() + snapshot.totalDeposited() - snapshot.totalWithdrawn();
+    if (total == expected) {
       return InvariantResult.pass(Invariant.CASH_CONSERVATION);
     }
     return InvariantResult.fail(
         Invariant.CASH_CONSERVATION,
-        "total cash " + total + " != initial " + snapshot.initialTotalCash());
+        "total cash " + total + " != initial " + snapshot.initialTotalCash()
+            + " + deposited " + snapshot.totalDeposited()
+            + " - withdrawn " + snapshot.totalWithdrawn() + " (= " + expected + ")");
   }
 
   private static InvariantResult checkAssetConservation(EngineSnapshot snapshot) {

@@ -15,6 +15,8 @@ import java.util.List;
  * @param accounts                   every account's balances
  * @param initialTotalCash           total cash at engine start
  * @param initialTotalAsset          total asset at engine start
+ * @param totalDeposited             cumulative cash deposited via the funding path
+ * @param totalWithdrawn             cumulative cash withdrawn via the funding path
  * @param cumulativeCashFromBuyers   cumulative cash debited from buyers
  * @param cumulativeCashToSellers    cumulative cash credited to sellers
  * @param cumulativeAssetFromSellers cumulative asset debited from sellers
@@ -26,6 +28,8 @@ public record EngineSnapshot(
     List<AccountBalance> accounts,
     long initialTotalCash,
     long initialTotalAsset,
+    long totalDeposited,
+    long totalWithdrawn,
     long cumulativeCashFromBuyers,
     long cumulativeCashToSellers,
     long cumulativeAssetFromSellers,

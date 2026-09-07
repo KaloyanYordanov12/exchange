@@ -261,6 +261,11 @@ public final class MatchingEngine {
     latestSnapshot.set(new StampedSnapshot(request.requestId(), buildSnapshot()));
   }
 
+  @SuppressFBWarnings(
+      value = "AT_NONATOMIC_OPERATIONS_ON_SHARED_VARIABLE",
+      justification =
+          "cumulativeDeposited is read and written only on the single matching thread;"
+              + " the non-atomic += is safe and never contended")
   private void handleDeposit(DepositCash deposit) {
     ledger.creditCash(deposit.accountId(), deposit.amount());
     cumulativeDeposited += deposit.amount();
@@ -273,6 +278,11 @@ public final class MatchingEngine {
             deposit.accountId(), newBalance, ledger.assetOf(deposit.accountId())));
   }
 
+  @SuppressFBWarnings(
+      value = "AT_NONATOMIC_OPERATIONS_ON_SHARED_VARIABLE",
+      justification =
+          "cumulativeWithdrawn is read and written only on the single matching thread;"
+              + " the non-atomic += is safe and never contended")
   private void handleWithdraw(WithdrawCash withdraw) {
     boolean applied = ledger.withdrawCash(withdraw.accountId(), withdraw.amount());
     if (applied) {
@@ -313,6 +323,8 @@ public final class MatchingEngine {
         accounts,
         initialTotalCash,
         initialTotalAsset,
+        cumulativeDeposited,
+        cumulativeWithdrawn,
         cumulativeCashFromBuyers,
         cumulativeCashToSellers,
         cumulativeAssetFromSellers,

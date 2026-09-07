@@ -33,6 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and enqueued) and `POST /accounts/withdraw` (200 applied, 422 insufficient
   funds), both scaled-integer amounts, behind the API-key filter.
 
+### Changed
+
+- **Deposit-aware cash conservation (invariant 1).** The static law (total cash
+  equals the initial total) is replaced by `total_cash == initial + Σdeposits −
+  Σwithdrawals`: the engine tracks cumulative deposited/withdrawn totals in the
+  `EngineSnapshot`, the `InvariantChecker` verifies against them, and the property
+  test now funds via the deposit path and interleaves withdrawals — trades still
+  conserve, and the checker is proven to detect a violation of the new law. Asset
+  conservation is unchanged (asset has no deposit path; it flows only via a
+  one-time genesis endowment).
+
 - **Phase 8 — consistent engine snapshot.** A `LedgerView` lets the engine
   enumerate all accounts and totals; the engine tracks cumulative trade totals
   and initial totals, and answers an internal `SnapshotRequest` command by

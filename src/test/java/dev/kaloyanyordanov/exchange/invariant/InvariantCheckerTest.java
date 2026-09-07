@@ -25,9 +25,26 @@ class InvariantCheckerTest {
   private static final List<AccountBalance> VALID_ACCOUNTS =
       List.of(new AccountBalance(1L, 500L, 10L), new AccountBalance(2L, 300L, 20L));
 
+  /**
+   * A snapshot whose accounts, book, and totals are all internally consistent: cash
+   * sums to 800 with initial 800 and no deposits/withdrawals; asset sums to 30 with
+   * initial 30; trade counters balance.
+   */
   private static EngineSnapshot valid() {
+    return snapshot(VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 800L, 30L, 0L, 0L);
+  }
+
+  private static EngineSnapshot snapshot(
+      BookSnapshot book,
+      List<RestingOrder> resting,
+      List<AccountBalance> accounts,
+      long initialCash,
+      long initialAsset,
+      long deposited,
+      long withdrawn) {
     return new EngineSnapshot(
-        VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 800L, 30L, 1_000L, 1_000L, 10L, 10L);
+        book, resting, accounts, initialCash, initialAsset, deposited, withdrawn,
+        1_000L, 1_000L, 10L, 10L);
   }
 
   private static boolean failed(CheckReport report, Invariant invariant) {
@@ -52,18 +69,34 @@ class InvariantCheckerTest {
   }
 
   @Test
-  void detectsCashConservationViolation() {
+  void cashConservationHoldsUnderDepositsAndWithdrawals() {
+    // Cash sums to 800 = initial 500 + deposited 400 - withdrawn 100.
+    CheckReport report =
+        InvariantChecker.check(
+            snapshot(VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 500L, 30L, 400L, 100L));
+    assertThat(report.allPassed()).isTrue();
+  }
+
+  @Test
+  void detectsCashConservationViolationAgainstStaticInitial() {
+    // No deposits/withdrawals, so cash must equal the initial 999 (it sums to 800).
     assertDetects(
-        new EngineSnapshot(
-            VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 999L, 30L, 1_000L, 1_000L, 10L, 10L),
+        snapshot(VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 999L, 30L, 0L, 0L),
+        Invariant.CASH_CONSERVATION);
+  }
+
+  @Test
+  void detectsCashConservationViolationAgainstDepositAwareLaw() {
+    // Cash sums to 800 but the deposit-aware law expects 500 + 400 - 200 = 700.
+    assertDetects(
+        snapshot(VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 500L, 30L, 400L, 200L),
         Invariant.CASH_CONSERVATION);
   }
 
   @Test
   void detectsAssetConservationViolation() {
     assertDetects(
-        new EngineSnapshot(
-            VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 800L, 999L, 1_000L, 1_000L, 10L, 10L),
+        snapshot(VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 800L, 999L, 0L, 0L),
         Invariant.ASSET_CONSERVATION);
   }
 
@@ -73,8 +106,7 @@ class InvariantCheckerTest {
     List<AccountBalance> accounts =
         List.of(new AccountBalance(1L, -100L, 10L), new AccountBalance(2L, 900L, 20L));
     assertDetects(
-        new EngineSnapshot(
-            VALID_BOOK, VALID_RESTING, accounts, 800L, 30L, 1_000L, 1_000L, 10L, 10L),
+        snapshot(VALID_BOOK, VALID_RESTING, accounts, 800L, 30L, 0L, 0L),
         Invariant.NO_NEGATIVE_BALANCES);
   }
 
@@ -83,8 +115,7 @@ class InvariantCheckerTest {
     List<RestingOrder> resting =
         List.of(new RestingOrder(1L, Side.BUY, 100L, 5L, 6L, 1L)); // remaining 6 > quantity 5
     assertDetects(
-        new EngineSnapshot(
-            VALID_BOOK, resting, VALID_ACCOUNTS, 800L, 30L, 1_000L, 1_000L, 10L, 10L),
+        snapshot(VALID_BOOK, resting, VALID_ACCOUNTS, 800L, 30L, 0L, 0L),
         Invariant.NO_OVERFILL);
   }
 
@@ -95,8 +126,7 @@ class InvariantCheckerTest {
             List.of(new PriceLevel(99L, 3L), new PriceLevel(100L, 10L)), // bids ascending
             List.of(new PriceLevel(101L, 4L)));
     assertDetects(
-        new EngineSnapshot(
-            book, VALID_RESTING, VALID_ACCOUNTS, 800L, 30L, 1_000L, 1_000L, 10L, 10L),
+        snapshot(book, VALID_RESTING, VALID_ACCOUNTS, 800L, 30L, 0L, 0L),
         Invariant.PRICE_TIME_PRIORITY);
   }
 
@@ -107,8 +137,7 @@ class InvariantCheckerTest {
             new RestingOrder(1L, Side.BUY, 100L, 5L, 5L, 2L),
             new RestingOrder(2L, Side.BUY, 100L, 5L, 5L, 1L)); // sequence goes backwards
     assertDetects(
-        new EngineSnapshot(
-            VALID_BOOK, resting, VALID_ACCOUNTS, 800L, 30L, 1_000L, 1_000L, 10L, 10L),
+        snapshot(VALID_BOOK, resting, VALID_ACCOUNTS, 800L, 30L, 0L, 0L),
         Invariant.PRICE_TIME_PRIORITY);
   }
 
@@ -117,8 +146,7 @@ class InvariantCheckerTest {
     BookSnapshot book =
         new BookSnapshot(List.of(new PriceLevel(101L, 5L)), List.of(new PriceLevel(100L, 5L)));
     assertDetects(
-        new EngineSnapshot(
-            book, VALID_RESTING, VALID_ACCOUNTS, 800L, 30L, 1_000L, 1_000L, 10L, 10L),
+        snapshot(book, VALID_RESTING, VALID_ACCOUNTS, 800L, 30L, 0L, 0L),
         Invariant.BOOK_NOT_CROSSED);
   }
 
@@ -126,7 +154,8 @@ class InvariantCheckerTest {
   void detectsUnbalancedTradeCash() {
     assertDetects(
         new EngineSnapshot(
-            VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 800L, 30L, 1_000L, 999L, 10L, 10L),
+            VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 800L, 30L, 0L, 0L,
+            1_000L, 999L, 10L, 10L),
         Invariant.TRADES_BALANCE);
   }
 
@@ -134,7 +163,8 @@ class InvariantCheckerTest {
   void detectsUnbalancedTradeAsset() {
     assertDetects(
         new EngineSnapshot(
-            VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 800L, 30L, 1_000L, 1_000L, 10L, 9L),
+            VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 800L, 30L, 0L, 0L,
+            1_000L, 1_000L, 10L, 9L),
         Invariant.TRADES_BALANCE);
   }
 }
