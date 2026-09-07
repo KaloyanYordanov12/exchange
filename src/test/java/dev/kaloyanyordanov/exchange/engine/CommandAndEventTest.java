@@ -73,6 +73,18 @@ class CommandAndEventTest {
   }
 
   @Test
+  void accountUpdatedValidates() {
+    AccountUpdated event = new AccountUpdated(5L, 900L, 12L);
+    assertThat(event.accountId()).isEqualTo(5L);
+    assertThat(event.cash()).isEqualTo(900L);
+    assertThat(event.asset()).isEqualTo(12L);
+    assertThatThrownBy(() -> new AccountUpdated(1L, -1L, 0L))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new AccountUpdated(1L, 0L, -1L))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   void orderRejectedValidates() {
     OrderRejected event = new OrderRejected(OrderId.of(5L), RejectReason.INSUFFICIENT_CASH, 4L);
     assertThat(event.id()).isEqualTo(OrderId.of(5L));

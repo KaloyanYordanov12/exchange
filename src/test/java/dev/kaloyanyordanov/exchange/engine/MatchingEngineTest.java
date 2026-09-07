@@ -8,6 +8,7 @@ import dev.kaloyanyordanov.exchange.book.OrderId;
 import dev.kaloyanyordanov.exchange.book.Side;
 import dev.kaloyanyordanov.exchange.book.Symbol;
 import dev.kaloyanyordanov.exchange.book.Trade;
+import dev.kaloyanyordanov.exchange.ledger.Ledger;
 import org.junit.jupiter.api.Test;
 
 class MatchingEngineTest {
@@ -123,6 +124,33 @@ class MatchingEngineTest {
 
     assertThat(publisher.accepted()).extracting(OrderAccepted::id).containsExactly(OrderId.of(1L));
     assertThat(engine.restingOrders()).extracting(Order::id).containsExactly(OrderId.of(1L));
+  }
+
+  @Test
+  void emitsAccountUpdatesForAffectedAccountsWhenLedgerBacked() {
+    RecordingEventPublisher publisher = new RecordingEventPublisher();
+    Ledger ledger = new Ledger();
+    ledger.deposit(10L, 10_000L, 0L);
+    ledger.deposit(20L, 0L, 100L);
+    MatchingEngine engine =
+        new MatchingEngine(SYMBOL, 1024, publisher, ledger, ledger);
+
+    engine.processCommand(new SubmitOrder(OrderId.of(1L), Side.SELL, 100L, 5L, 20L));
+    engine.processCommand(new SubmitOrder(OrderId.of(2L), Side.BUY, 100L, 5L, 10L));
+
+    // One AccountUpdated per distinct affected account, with settled balances.
+    assertThat(publisher.accountUpdates())
+        .containsExactlyInAnyOrder(
+            new AccountUpdated(10L, 9_500L, 5L), new AccountUpdated(20L, 500L, 95L));
+  }
+
+  @Test
+  void emitsNoAccountUpdatesWithoutLedger() {
+    RecordingEventPublisher publisher = new RecordingEventPublisher();
+    MatchingEngine engine = engine(publisher);
+    engine.processCommand(new SubmitOrder(OrderId.of(1L), Side.SELL, 100L, 5L, 20L));
+    engine.processCommand(new SubmitOrder(OrderId.of(2L), Side.BUY, 100L, 5L, 10L));
+    assertThat(publisher.accountUpdates()).isEmpty();
   }
 
   @Test

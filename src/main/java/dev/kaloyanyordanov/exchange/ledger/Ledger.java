@@ -17,7 +17,7 @@ import java.util.Set;
  * caps a fill to what the buyer can pay and {@link #maxSellerUnits} to what the
  * seller can deliver, so a settlement can never drive a balance negative.
  */
-public final class Ledger implements FillPolicy {
+public final class Ledger implements FillPolicy, AccountView {
 
   /** Mutable per-account position; mutated only on the matching thread. */
   private static final class Position {

@@ -6,5 +6,5 @@ package dev.kaloyanyordanov.exchange.engine;
  * so consumers can dispatch exhaustively.
  */
 public sealed interface EngineEvent
-    permits OrderAccepted, OrderRejected, TradeExecuted, BookChanged {
+    permits OrderAccepted, OrderRejected, TradeExecuted, BookChanged, AccountUpdated {
 }

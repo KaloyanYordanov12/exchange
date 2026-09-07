@@ -33,6 +33,16 @@ final class RecordingEventPublisher implements EventPublisher {
     return result;
   }
 
+  List<AccountUpdated> accountUpdates() {
+    List<AccountUpdated> result = new ArrayList<>();
+    for (EngineEvent event : events) {
+      if (event instanceof AccountUpdated updated) {
+        result.add(updated);
+      }
+    }
+    return result;
+  }
+
   List<TradeExecuted> trades() {
     List<TradeExecuted> result = new ArrayList<>();
     for (EngineEvent event : events) {

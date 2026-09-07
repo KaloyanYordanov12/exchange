@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 4 — API egress backbone.** `AccountUpdated` event emitted on the
+  matching thread after settlement (pure egress; matching behaviour and
+  determinism unchanged), `AccountView` read interface on `Ledger`, a
+  `FanoutPublisher` that forwards each event to multiple sinks with per-sink
+  failure isolation, and a synchronous lock-free `MarketDataCache` read model
+  (latest immutable book snapshot + balances) so HTTP threads read market data
+  without ever touching the book or ledger off the matching thread (§4.4).
+
 - **Phase 1 — domain core (pure, single-threaded).** Immutable scaled-integer
   value types in `book`: `Side`, `Symbol` (tick/lot validation), `OrderId`,
   `Order` (immutable `remaining`, `withRemaining`), `Trade` (overflow-checked
