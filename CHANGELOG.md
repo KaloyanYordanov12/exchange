@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failure isolation, and a synchronous lock-free `MarketDataCache` read model
   (latest immutable book snapshot + balances) so HTTP threads read market data
   without ever touching the book or ledger off the matching thread (§4.4).
+- Trader identity: `ExchangeProperties` (symbol, ingress capacity, trader roster)
+  and a bcrypt-backed `TraderRegistry` that resolves a presented API key to an
+  account id (`spring-security-crypto`). Identity only, not full auth.
 
 - **Phase 1 — domain core (pure, single-threaded).** Immutable scaled-integer
   value types in `book`: `Side`, `Symbol` (tick/lot validation), `OrderId`,

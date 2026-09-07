@@ -38,6 +38,12 @@
             <artifactId>jctools-core</artifactId>
             <version>4.0.7</version>
         </dependency>
+        <!-- BCrypt for hashing trader API keys (identity only, not full auth).
+             Version managed by the Spring Boot BOM. -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
