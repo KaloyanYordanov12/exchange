@@ -1,0 +1,58 @@
+# ---- Java / Maven ----
+target/
+*.class
+*.jar
+*.war
+*.ear
+!/.mvn/wrapper/maven-wrapper.jar
+dependency-reduced-pom.xml
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.downloader
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+
+# ---- Maven wrapper: keep the scripts + jar tracked, ignore downloaded dists ----
+.m2/
+
+# ---- IDE ----
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+*.code-workspace
+nbproject/
+.nb-gradle/
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Logs / runtime ----
+*.log
+logs/
+*.pid
+
+# ---- Frontend (Phase 9) ----
+node_modules/
+dist/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ---- Working docs: planning/briefs — must NEVER be committed to this repo ----
+exchange-plan.md
+exchange-preflight.md
+exchange-phase-0-brief.md
+exchange-core-brief.md
+exchange-api-realtime-persistence-brief.md
+exchange-simulator-invariants-brief.md
