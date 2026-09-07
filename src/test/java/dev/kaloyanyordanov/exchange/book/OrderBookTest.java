@@ -141,6 +141,24 @@ class OrderBookTest {
   }
 
   @Test
+  void restingOrdersReturnsEveryOrderImmutably() {
+    OrderBook book = book();
+    book.addResting(order(1, Side.BUY, 100L, 5L, 1));
+    book.addResting(order(2, Side.BUY, 99L, 3L, 2));
+    book.addResting(order(3, Side.SELL, 110L, 4L, 3));
+    assertThat(book.restingOrders())
+        .extracting(Order::id)
+        .containsExactlyInAnyOrder(OrderId.of(1L), OrderId.of(2L), OrderId.of(3L));
+    assertThatThrownBy(() -> book.restingOrders().add(order(4, Side.BUY, 1L, 1L, 4)))
+        .isInstanceOf(UnsupportedOperationException.class);
+  }
+
+  @Test
+  void restingOrdersEmptyForEmptyBook() {
+    assertThat(book().restingOrders()).isEmpty();
+  }
+
+  @Test
   void snapshotIsImmutable() {
     BookSnapshot snapshot = book().snapshot();
     assertThatThrownBy(() -> snapshot.bids().add(new PriceLevel(1L, 1L)))

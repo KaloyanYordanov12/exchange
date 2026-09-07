@@ -148,6 +148,24 @@ public final class OrderBook {
   }
 
   /**
+   * All resting orders across both sides, in no particular cross-side order.
+   * Returned as an immutable copy; useful for inspection, tests, and later
+   * persistence.
+   *
+   * @return every resting order
+   */
+  public List<Order> restingOrders() {
+    List<Order> orders = new ArrayList<>();
+    for (ArrayDeque<Order> level : bids.values()) {
+      orders.addAll(level);
+    }
+    for (ArrayDeque<Order> level : asks.values()) {
+      orders.addAll(level);
+    }
+    return List.copyOf(orders);
+  }
+
+  /**
    * An immutable aggregated snapshot: bids best-first, asks best-first.
    *
    * @return the snapshot
