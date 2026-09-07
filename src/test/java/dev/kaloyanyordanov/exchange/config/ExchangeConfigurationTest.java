@@ -134,7 +134,7 @@ class ExchangeConfigurationTest {
   @Test
   void traderRegistryHoldsConfiguredTraders() {
     TraderRegistry registry = configuration.traderRegistry(PROPERTIES);
-    assertThat(registry.traders()).hasSize(1);
+    assertThat(registry.size()).isEqualTo(1);
   }
 
   @Test

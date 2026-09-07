@@ -59,3 +59,6 @@ exchange-simulator-invariants-brief.md
 
 # jqwik run database (per-run artifact; not source)
 .jqwik-database
+
+# Phase 8.5 working brief — must never be committed.
+exchange-deposits-brief.md

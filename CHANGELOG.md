@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 8.5 — accounts + deposits/withdrawals (demo provider).** Public account
+  registration (`POST /register`): `TraderRegistry` now creates accounts at
+  runtime and returns a generated API key **once** (only its bcrypt hash is kept);
+  new accounts start at zero. Identity is in-memory (registered accounts do not
+  survive a restart); persisting identity is out of v1 scope.
+
 - **Phase 8 — consistent engine snapshot.** A `LedgerView` lets the engine
   enumerate all accounts and totals; the engine tracks cumulative trade totals
   and initial totals, and answers an internal `SnapshotRequest` command by

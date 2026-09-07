@@ -1,6 +1,7 @@
 package dev.kaloyanyordanov.exchange.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties.TraderProperties;
 import java.util.List;
@@ -42,9 +43,38 @@ class TraderRegistryTest {
   }
 
   @Test
-  void exposesTradersImmutably() {
-    TraderRegistry registry = new TraderRegistry(List.of());
-    assertThat(registry.traders()).isEmpty();
+  void emptyRegistryHasNoAccounts() {
+    TraderRegistry registry = new TraderRegistry(List.of(), ENCODER);
+    assertThat(registry.size()).isZero();
     assertThat(registry.authenticate("anything")).isEmpty();
+  }
+
+  @Test
+  void registrationReturnsWorkingKeyStoringHashOnly() {
+    TraderRegistry registry = registryWith("alice-key", "bob-key");
+    RegistrationResult result = registry.register("carol");
+
+    // The account id is distinct from the configured ones.
+    assertThat(result.accountId()).isGreaterThan(2L);
+    assertThat(result.apiKey()).isNotBlank();
+    // The returned key authenticates to the new account.
+    assertThat(registry.authenticate(result.apiKey())).contains(result.accountId());
+    assertThat(registry.size()).isEqualTo(3);
+  }
+
+  @Test
+  void eachRegistrationGetsDistinctIdAndKey() {
+    TraderRegistry registry = new TraderRegistry(List.of(), ENCODER);
+    RegistrationResult first = registry.register("a");
+    RegistrationResult second = registry.register("b");
+    assertThat(first.accountId()).isNotEqualTo(second.accountId());
+    assertThat(first.apiKey()).isNotEqualTo(second.apiKey());
+  }
+
+  @Test
+  void registrationRequiresName() {
+    TraderRegistry registry = new TraderRegistry(List.of(), ENCODER);
+    assertThatThrownBy(() -> registry.register(" "))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 }
