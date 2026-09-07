@@ -22,3 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finding: Checkstyle (committed Google config forced to **error** severity,
   checkstyle 14.1.0) and SpotBugs (effort=Max, threshold=Low, failOnError).
   Both gates proven to bite before the scaffold was made to pass them.
+- JaCoCo coverage gate bound to `verify` (jacoco 0.8.15): **85% line / 80%
+  branch**, excluding the `Application` bootstrap class. Proven real by
+  temporarily un-excluding `Application` and confirming the build went red
+  (0.00 line ratio &lt; 0.85), then reverting.
