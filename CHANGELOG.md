@@ -18,3 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/actuator/health` endpoint with a MockMvc smoke test asserting `200`/`UP`
   (no database, no Testcontainers). Pulls in the `spring-boot-webmvc-test`
   module, which Spring Boot 4 split out of `starter-test`.
+- Static-analysis gates bound to `verify`, both failing the build on any
+  finding: Checkstyle (committed Google config forced to **error** severity,
+  checkstyle 14.1.0) and SpotBugs (effort=Max, threshold=Low, failOnError).
+  Both gates proven to bite before the scaffold was made to pass them.

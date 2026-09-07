@@ -13,11 +13,16 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class Application {
 
-    private Application() {
-        // Utility bootstrap class; not meant to be instantiated.
-    }
+  private Application() {
+    // Utility bootstrap class; not meant to be instantiated.
+  }
 
-    public static void main(String[] args) {
-        SpringApplication.run(Application.class, args);
-    }
+  /**
+   * Starts the Spring Boot application.
+   *
+   * @param args command-line arguments passed through to Spring Boot
+   */
+  public static void main(String[] args) {
+    SpringApplication.run(Application.class, args);
+  }
 }
