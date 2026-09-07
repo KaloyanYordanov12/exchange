@@ -199,15 +199,10 @@
                 </executions>
             </plugin>
 
-            <!-- PIT mutation testing. PHASE 0: plumbing only, runnable via
-                 `mvnw org.pitest:pitest-maven:mutationCoverage`. It is NOT bound
-                 to verify and sets NO threshold here on purpose: a health
-                 endpoint has no meaningful mutants, so a gate would be vacuous.
-                 ENFORCEMENT (mutationThreshold >= 70, bound to verify) switches
-                 on in Phase 1 with the first real branching logic (order book).
-                 This is the only pre-authorized Phase 0 gate deferral.
-                 failWhenNoMutations=false only because Phase 0 has no mutants;
-                 Phase 1 removes it. -->
+            <!-- PIT mutation testing. ENFORCED from Phase 1: mutationCoverage is
+                 bound to verify and fails the build below a 70% mutation score.
+                 PIT earns its keep on the matching/ledger branch logic. Only the
+                 Application bootstrap class is excluded (as from coverage). -->
             <plugin>
                 <groupId>org.pitest</groupId>
                 <artifactId>pitest-maven</artifactId>
@@ -234,10 +229,17 @@
                         <param>HTML</param>
                         <param>XML</param>
                     </outputFormats>
-                    <!-- Phase 0 only: no mutants yet. Removed in Phase 1. -->
-                    <failWhenNoMutations>false</failWhenNoMutations>
-                    <!-- No mutationThreshold here: enforcement begins in Phase 1. -->
+                    <mutationThreshold>70</mutationThreshold>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>pitest-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>mutationCoverage</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

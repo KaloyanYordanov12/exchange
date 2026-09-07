@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 1 — domain core (pure, single-threaded).** Immutable scaled-integer
+  value types in `book`: `Side`, `Symbol` (tick/lot validation), `OrderId`,
+  `Order` (immutable `remaining`, `withRemaining`), `Trade` (overflow-checked
+  `notional`). No floating point anywhere in the domain.
+- PIT mutation testing is now **enforced**: `mutationCoverage` bound to `verify`
+  with a 70% threshold (the Phase 0 deferral is lifted).
+
 - Maven + Spring Boot 4.1.1 project scaffold on Java 25 (Temurin), with the
   Maven wrapper and empty feature packages (`book`, `engine`, `ledger`, `api`,
   `realtime`, `persistence`, `sim`, `invariant`, `config`, `error`).
