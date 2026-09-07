@@ -166,6 +166,47 @@
                     </execution>
                 </executions>
             </plugin>
+
+            <!-- PIT mutation testing. PHASE 0: plumbing only, runnable via
+                 `mvnw org.pitest:pitest-maven:mutationCoverage`. It is NOT bound
+                 to verify and sets NO threshold here on purpose: a health
+                 endpoint has no meaningful mutants, so a gate would be vacuous.
+                 ENFORCEMENT (mutationThreshold >= 70, bound to verify) switches
+                 on in Phase 1 with the first real branching logic (order book).
+                 This is the only pre-authorized Phase 0 gate deferral.
+                 failWhenNoMutations=false only because Phase 0 has no mutants;
+                 Phase 1 removes it. -->
+            <plugin>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-maven</artifactId>
+                <version>1.30.0</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.pitest</groupId>
+                        <artifactId>pitest-junit5-plugin</artifactId>
+                        <version>1.2.3</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <targetClasses>
+                        <param>dev.kaloyanyordanov.exchange.*</param>
+                    </targetClasses>
+                    <targetTests>
+                        <param>dev.kaloyanyordanov.exchange.*</param>
+                    </targetTests>
+                    <excludedClasses>
+                        <!-- Bootstrap class: excluded from mutation as from coverage. -->
+                        <param>dev.kaloyanyordanov.exchange.Application</param>
+                    </excludedClasses>
+                    <outputFormats>
+                        <param>HTML</param>
+                        <param>XML</param>
+                    </outputFormats>
+                    <!-- Phase 0 only: no mutants yet. Removed in Phase 1. -->
+                    <failWhenNoMutations>false</failWhenNoMutations>
+                    <!-- No mutationThreshold here: enforcement begins in Phase 1. -->
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 

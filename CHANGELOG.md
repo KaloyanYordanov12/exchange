@@ -26,3 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   branch**, excluding the `Application` bootstrap class. Proven real by
   temporarily un-excluding `Application` and confirming the build went red
   (0.00 line ratio &lt; 0.85), then reverting.
+- PIT mutation-testing plumbing (`pitest-maven` 1.30.0 + junit5 plugin 1.2.3),
+  runnable via `mvnw org.pitest:pitest-maven:mutationCoverage`. **Enforcement is
+  deferred:** the ≥70% mutation-score gate (bound to `verify`) switches on in
+  Phase 1, where the first real branching logic (the order book) appears. A
+  health endpoint has no meaningful mutants, so a threshold here would be
+  vacuous. This is the only pre-authorized Phase 0 gate deferral.
