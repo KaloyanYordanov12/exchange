@@ -13,6 +13,8 @@ import dev.kaloyanyordanov.exchange.book.Side;
 import dev.kaloyanyordanov.exchange.book.Trade;
 import dev.kaloyanyordanov.exchange.engine.AccountUpdated;
 import dev.kaloyanyordanov.exchange.engine.BookChanged;
+import dev.kaloyanyordanov.exchange.engine.CashDeposited;
+import dev.kaloyanyordanov.exchange.engine.CashWithdrawn;
 import dev.kaloyanyordanov.exchange.engine.EngineEvent;
 import dev.kaloyanyordanov.exchange.engine.OrderAccepted;
 import dev.kaloyanyordanov.exchange.engine.OrderRejected;
@@ -28,11 +30,14 @@ class PersistenceWorkerTest {
   private final AccountRepository accounts = mock(AccountRepository.class);
   private final OrderRepository orders = mock(OrderRepository.class);
   private final TradeRepository trades = mock(TradeRepository.class);
+  private final LedgerTransactionRepository ledgerTransactions =
+      mock(LedgerTransactionRepository.class);
   private final PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
 
   private PersistenceWorker worker() {
     when(txManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
-    return new PersistenceWorker(accounts, orders, trades, txManager, 1024, 100);
+    return new PersistenceWorker(
+        accounts, orders, trades, ledgerTransactions, txManager, 1024, 100);
   }
 
   @Test
@@ -77,6 +82,36 @@ class PersistenceWorkerTest {
   }
 
   @Test
+  @SuppressWarnings("unchecked")
+  void mapsAndSavesCashMovements() {
+    PersistenceWorker worker = worker();
+
+    worker.persistBatch(
+        List.<EngineEvent>of(
+            new CashDeposited(10L, 500L, 500L, "demo-deposit-1"),
+            new CashWithdrawn(10L, 200L, 300L, "demo-withdrawal-1")));
+
+    ArgumentCaptor<List<LedgerTransactionEntity>> captor = ArgumentCaptor.forClass(List.class);
+    verify(ledgerTransactions).saveAll(captor.capture());
+    List<LedgerTransactionEntity> saved = captor.getValue();
+    assertThat(saved).hasSize(2);
+
+    LedgerTransactionEntity deposit = saved.get(0);
+    assertThat(deposit.getTransactionType()).isEqualTo(LedgerTransactionType.DEPOSIT);
+    assertThat(deposit.getAccountId()).isEqualTo(10L);
+    assertThat(deposit.getAmount()).isEqualTo(500L);
+    assertThat(deposit.getNewCashBalance()).isEqualTo(500L);
+    assertThat(deposit.getProviderReference()).isEqualTo("demo-deposit-1");
+    assertThat(deposit.getCreatedAt()).isNotNull();
+
+    LedgerTransactionEntity withdrawal = saved.get(1);
+    assertThat(withdrawal.getTransactionType()).isEqualTo(LedgerTransactionType.WITHDRAWAL);
+    assertThat(withdrawal.getAmount()).isEqualTo(200L);
+    assertThat(withdrawal.getNewCashBalance()).isEqualTo(300L);
+    assertThat(withdrawal.getProviderReference()).isEqualTo("demo-withdrawal-1");
+  }
+
+  @Test
   void ignoresRejectionsAndBookSnapshots() {
     PersistenceWorker worker = worker();
 
@@ -88,6 +123,7 @@ class PersistenceWorkerTest {
     verify(orders, never()).saveAll(any());
     verify(trades, never()).saveAll(any());
     verify(accounts, never()).saveAll(any());
+    verify(ledgerTransactions, never()).saveAll(any());
   }
 
   @Test

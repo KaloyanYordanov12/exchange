@@ -3,10 +3,13 @@ package dev.kaloyanyordanov.exchange.persistence;
 import dev.kaloyanyordanov.exchange.book.Trade;
 import dev.kaloyanyordanov.exchange.engine.AccountUpdated;
 import dev.kaloyanyordanov.exchange.engine.AsyncEventConsumer;
+import dev.kaloyanyordanov.exchange.engine.CashDeposited;
+import dev.kaloyanyordanov.exchange.engine.CashWithdrawn;
 import dev.kaloyanyordanov.exchange.engine.EngineEvent;
 import dev.kaloyanyordanov.exchange.engine.EventPublisher;
 import dev.kaloyanyordanov.exchange.engine.OrderAccepted;
 import dev.kaloyanyordanov.exchange.engine.TradeExecuted;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -25,28 +28,32 @@ public final class PersistenceWorker implements EventPublisher {
   private final AccountRepository accountRepository;
   private final OrderRepository orderRepository;
   private final TradeRepository tradeRepository;
+  private final LedgerTransactionRepository ledgerTransactionRepository;
   private final TransactionTemplate transactionTemplate;
 
   /**
    * Creates the worker.
    *
-   * @param accountRepository  the accounts repository
-   * @param orderRepository    the orders repository
-   * @param tradeRepository    the trades repository
-   * @param transactionManager the transaction manager
-   * @param capacity           the bounded buffer capacity
-   * @param maxBatch           the maximum events written per transaction
+   * @param accountRepository            the accounts repository
+   * @param orderRepository             the orders repository
+   * @param tradeRepository             the trades repository
+   * @param ledgerTransactionRepository the cash-movement audit repository
+   * @param transactionManager          the transaction manager
+   * @param capacity                    the bounded buffer capacity
+   * @param maxBatch                    the maximum events written per transaction
    */
   public PersistenceWorker(
       AccountRepository accountRepository,
       OrderRepository orderRepository,
       TradeRepository tradeRepository,
+      LedgerTransactionRepository ledgerTransactionRepository,
       PlatformTransactionManager transactionManager,
       int capacity,
       int maxBatch) {
     this.accountRepository = accountRepository;
     this.orderRepository = orderRepository;
     this.tradeRepository = tradeRepository;
+    this.ledgerTransactionRepository = ledgerTransactionRepository;
     this.transactionTemplate = new TransactionTemplate(transactionManager);
     this.consumer = new AsyncEventConsumer("persistence", capacity, maxBatch, this::persistBatch);
   }
@@ -74,6 +81,8 @@ public final class PersistenceWorker implements EventPublisher {
     List<OrderEntity> orders = new ArrayList<>();
     List<TradeEntity> trades = new ArrayList<>();
     List<AccountEntity> accounts = new ArrayList<>();
+    List<LedgerTransactionEntity> ledgerTransactions = new ArrayList<>();
+    Instant now = Instant.now();
     for (EngineEvent event : batch) {
       switch (event) {
         case OrderAccepted accepted ->
@@ -89,6 +98,24 @@ public final class PersistenceWorker implements EventPublisher {
         case AccountUpdated updated ->
             accounts.add(
                 new AccountEntity(updated.accountId(), updated.cash(), updated.asset()));
+        case CashDeposited deposited ->
+            ledgerTransactions.add(
+                new LedgerTransactionEntity(
+                    LedgerTransactionType.DEPOSIT,
+                    deposited.accountId(),
+                    deposited.amount(),
+                    deposited.newCashBalance(),
+                    deposited.providerReference(),
+                    now));
+        case CashWithdrawn withdrawn ->
+            ledgerTransactions.add(
+                new LedgerTransactionEntity(
+                    LedgerTransactionType.WITHDRAWAL,
+                    withdrawn.accountId(),
+                    withdrawn.amount(),
+                    withdrawn.newCashBalance(),
+                    withdrawn.providerReference(),
+                    now));
         default -> {
           // OrderRejected and BookChanged are not part of the audit log.
         }
@@ -104,6 +131,9 @@ public final class PersistenceWorker implements EventPublisher {
           }
           if (!accounts.isEmpty()) {
             accountRepository.saveAll(accounts);
+          }
+          if (!ledgerTransactions.isEmpty()) {
+            ledgerTransactionRepository.saveAll(ledgerTransactions);
           }
         });
   }

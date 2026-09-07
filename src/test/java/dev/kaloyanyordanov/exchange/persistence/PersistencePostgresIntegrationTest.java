@@ -7,8 +7,13 @@ import dev.kaloyanyordanov.exchange.book.OrderId;
 import dev.kaloyanyordanov.exchange.book.Side;
 import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
 import dev.kaloyanyordanov.exchange.engine.SubmitOrder;
+import dev.kaloyanyordanov.exchange.payment.FundingStatus;
+import dev.kaloyanyordanov.exchange.payment.PaymentService;
 import java.time.Duration;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -26,6 +31,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @SpringBootTest
 @ActiveProfiles("persistence")
 @Testcontainers
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class PersistencePostgresIntegrationTest {
 
   @Container
@@ -39,11 +45,14 @@ class PersistencePostgresIntegrationTest {
   }
 
   @Autowired private MatchingEngine engine;
+  @Autowired private PaymentService paymentService;
   @Autowired private OrderRepository orderRepository;
   @Autowired private TradeRepository tradeRepository;
   @Autowired private AccountRepository accountRepository;
+  @Autowired private LedgerTransactionRepository ledgerTransactionRepository;
 
   @Test
+  @Order(1)
   void persistsOrdersTradesAndAccountSnapshots() {
     // Bob (account 2) sells; Alice (account 1) buys and crosses.
     engine.submit(new SubmitOrder(OrderId.of(1L), Side.SELL, 100L, 10L, 2L));
@@ -66,5 +75,36 @@ class PersistencePostgresIntegrationTest {
     AccountEntity buyer = accountRepository.findById(1L).orElseThrow();
     assertThat(buyer.getCash()).isEqualTo(99_999_000L);
     assertThat(buyer.getAsset()).isEqualTo(1_010L);
+  }
+
+  @Test
+  @Order(2)
+  void persistsDepositsAndWithdrawalsToTheLedgerLog() {
+    // A dedicated account (3) so the funding movements do not disturb the trade
+    // test's balances; the deposit funds the withdrawal.
+    assertThat(paymentService.deposit(3L, 5_000L).status()).isEqualTo(FundingStatus.ACCEPTED);
+    assertThat(paymentService.withdraw(3L, 2_000L).status()).isEqualTo(FundingStatus.APPLIED);
+
+    await()
+        .atMost(Duration.ofSeconds(15))
+        .untilAsserted(() -> assertThat(ledgerTransactionRepository.count()).isEqualTo(2L));
+
+    LedgerTransactionEntity deposit =
+        ledgerTransactionRepository.findAll().stream()
+            .filter(row -> row.getTransactionType() == LedgerTransactionType.DEPOSIT)
+            .findFirst()
+            .orElseThrow();
+    assertThat(deposit.getAccountId()).isEqualTo(3L);
+    assertThat(deposit.getAmount()).isEqualTo(5_000L);
+    assertThat(deposit.getProviderReference()).startsWith("demo-deposit-");
+    assertThat(deposit.getCreatedAt()).isNotNull();
+
+    LedgerTransactionEntity withdrawal =
+        ledgerTransactionRepository.findAll().stream()
+            .filter(row -> row.getTransactionType() == LedgerTransactionType.WITHDRAWAL)
+            .findFirst()
+            .orElseThrow();
+    assertThat(withdrawal.getAmount()).isEqualTo(2_000L);
+    assertThat(withdrawal.getProviderReference()).startsWith("demo-withdrawal-");
   }
 }

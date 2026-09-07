@@ -1,6 +1,7 @@
 package dev.kaloyanyordanov.exchange.config;
 
 import dev.kaloyanyordanov.exchange.persistence.AccountRepository;
+import dev.kaloyanyordanov.exchange.persistence.LedgerTransactionRepository;
 import dev.kaloyanyordanov.exchange.persistence.OrderRepository;
 import dev.kaloyanyordanov.exchange.persistence.PersistenceWorker;
 import dev.kaloyanyordanov.exchange.persistence.TradeRepository;
@@ -22,12 +23,13 @@ public class PersistenceConfiguration {
   /**
    * The async persistence worker, started/stopped with the context.
    *
-   * @param accountRepository  the accounts repository
-   * @param orderRepository    the orders repository
-   * @param tradeRepository    the trades repository
-   * @param transactionManager the transaction manager
-   * @param capacity           the worker's bounded buffer capacity
-   * @param maxBatch           the maximum events written per transaction
+   * @param accountRepository            the accounts repository
+   * @param orderRepository             the orders repository
+   * @param tradeRepository             the trades repository
+   * @param ledgerTransactionRepository the cash-movement audit repository
+   * @param transactionManager          the transaction manager
+   * @param capacity                    the worker's bounded buffer capacity
+   * @param maxBatch                    the maximum events written per transaction
    * @return the persistence worker
    */
   @Bean(initMethod = "start", destroyMethod = "stop")
@@ -35,6 +37,7 @@ public class PersistenceConfiguration {
       AccountRepository accountRepository,
       OrderRepository orderRepository,
       TradeRepository tradeRepository,
+      LedgerTransactionRepository ledgerTransactionRepository,
       PlatformTransactionManager transactionManager,
       @Value("${exchange.persistence.capacity:65536}") int capacity,
       @Value("${exchange.persistence.max-batch:500}") int maxBatch) {
@@ -42,6 +45,7 @@ public class PersistenceConfiguration {
         accountRepository,
         orderRepository,
         tradeRepository,
+        ledgerTransactionRepository,
         transactionManager,
         capacity,
         maxBatch);

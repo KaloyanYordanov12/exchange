@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   can never over-draw committed funds or drive a balance negative. `PaymentService`
   orchestrates provider authorization with the serial balance change (the engine is
   the sole authority on funds); the demo provider moves no real money.
+- Cash movements are durably audited to an append-only `ledger_transactions` table
+  (Flyway `V2`): type (deposit/withdrawal), account, scaled-integer amount, the
+  resulting cash balance, the provider reference, and a write timestamp. The async
+  persistence worker records them off the matching thread, like the trade tape.
 
 - **Phase 8 — consistent engine snapshot.** A `LedgerView` lets the engine
   enumerate all accounts and totals; the engine tracks cumulative trade totals
