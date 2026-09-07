@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 5 — throttled broadcaster core.** `ThrottledBroadcaster` consumes the
+  event stream on the matching thread with only lock-free work (coalesce the
+  latest book snapshot; offer trades to a bounded, drop-on-full tape) and flushes
+  on its own scheduler thread at a fixed rate (default 10 Hz): one coalesced book
+  snapshot plus a bounded trade batch per tick. `AsyncClientConnection` isolates
+  each client behind its own bounded buffer + drain thread, so a slow socket
+  drops/coalesces its own backlog and never stalls the flusher, other clients, or
+  the engine. A `JsonSerializer` seam keeps serialization off the stored state.
+
 - **Phase 4 — API egress backbone.** `AccountUpdated` event emitted on the
   matching thread after settlement (pure egress; matching behaviour and
   determinism unchanged), `AccountView` read interface on `Ledger`, a
