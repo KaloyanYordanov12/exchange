@@ -1,0 +1,164 @@
+package dev.kaloyanyordanov.exchange.sim;
+
+import dev.kaloyanyordanov.exchange.book.OrderId;
+import dev.kaloyanyordanov.exchange.book.Symbol;
+import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
+import dev.kaloyanyordanov.exchange.engine.SubmitOrder;
+import dev.kaloyanyordanov.exchange.engine.SubmitResult;
+import dev.kaloyanyordanov.exchange.sim.OrderGenerator.GeneratedOrder;
+import java.util.Random;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
+
+/**
+ * In-process, virtual-thread-per-trader load generator. Traders submit through
+ * the <em>real</em> ingress ({@link MatchingEngine#submit}) exactly like the API,
+ * take the real back-pressure rejection when the queue is full, and never bypass
+ * the queue or reach into the core. All reported metrics are measured, not
+ * fabricated.
+ */
+public final class LoadSimulator {
+
+  // Simulator order ids live in a high range to avoid colliding with API ids.
+  private static final long ORDER_ID_BASE = 1_000_000_000L;
+
+  private final MatchingEngine engine;
+  private final Symbol symbol;
+  private final SimulatorMetricsSink sink;
+  private final AtomicLong orderIds = new AtomicLong(ORDER_ID_BASE);
+  private final Object lifecycle = new Object();
+
+  private volatile RunMetrics metrics;
+  private volatile boolean stopRequested;
+  private ExecutorService executor;
+
+  /**
+   * Creates the simulator.
+   *
+   * @param engine the matching engine to drive through its real ingress
+   * @param symbol the traded symbol (tick/lot for order generation)
+   * @param sink   the metrics sink that records processed events
+   */
+  public LoadSimulator(MatchingEngine engine, Symbol symbol, SimulatorMetricsSink sink) {
+    this.engine = engine;
+    this.symbol = symbol;
+    this.sink = sink;
+  }
+
+  /**
+   * Whether a run is currently in progress.
+   *
+   * @return {@code true} if running
+   */
+  public boolean isRunning() {
+    RunMetrics current = metrics;
+    return current != null && current.isRunning();
+  }
+
+  /**
+   * Starts a run. Only one run may be active at a time.
+   *
+   * @param config the run configuration
+   */
+  public void start(SimulatorConfig config) {
+    synchronized (lifecycle) {
+      if (isRunning()) {
+        throw new IllegalStateException("a simulation is already running");
+      }
+      stopRequested = false;
+      long startNanos = System.nanoTime();
+      RunMetrics runMetrics = new RunMetrics(startNanos, config.maxLatencySamples());
+      metrics = runMetrics;
+      sink.activate(runMetrics);
+      executor = Executors.newVirtualThreadPerTaskExecutor();
+
+      long deadlineNanos = startNanos + config.maxDurationMillis() * 1_000_000L;
+      CountDownLatch done = new CountDownLatch(config.traderCount());
+      for (int i = 0; i < config.traderCount(); i++) {
+        long account = config.accountIds().get(i % config.accountIds().size());
+        long seed = config.randomSeed() + i;
+        executor.execute(
+            () -> {
+              try {
+                runTrader(config, runMetrics, account, seed, deadlineNanos);
+              } finally {
+                done.countDown();
+              }
+            });
+      }
+      Thread.ofVirtual()
+          .name("sim-coordinator")
+          .start(
+              () -> {
+                awaitQuietly(done); // traders stopped submitting
+                finish(runMetrics); // close the submission window
+              });
+    }
+  }
+
+  private void runTrader(
+      SimulatorConfig config, RunMetrics runMetrics, long account, long seed, long deadlineNanos) {
+    OrderGenerator generator = new OrderGenerator(symbol, config, new Random(seed));
+    long pacingNanos =
+        config.orderRatePerSecond() > 0 ? 1_000_000_000L / config.orderRatePerSecond() : 0L;
+    for (int j = 0;
+        j < config.ordersPerTrader() && !stopRequested && System.nanoTime() < deadlineNanos;
+        j++) {
+      GeneratedOrder order = generator.next();
+      long id = orderIds.getAndIncrement();
+      runMetrics.markSubmit(id, System.nanoTime());
+      SubmitResult result =
+          engine.submit(
+              new SubmitOrder(
+                  OrderId.of(id), order.side(), order.price(), order.quantity(), account));
+      if (result == SubmitResult.ENQUEUED) {
+        runMetrics.countSubmitted();
+      } else {
+        runMetrics.countRejected();
+        runMetrics.unmark(id);
+      }
+      if (pacingNanos > 0L) {
+        LockSupport.parkNanos(pacingNanos);
+      }
+    }
+  }
+
+  // The submission window is closed; the sink keeps counting the engine's drain
+  // until the next run replaces the active metrics.
+  private void finish(RunMetrics runMetrics) {
+    runMetrics.finish(System.nanoTime());
+    synchronized (lifecycle) {
+      if (executor != null) {
+        executor.shutdown();
+      }
+    }
+  }
+
+  private static void awaitQuietly(CountDownLatch latch) {
+    try {
+      latch.await();
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+    }
+  }
+
+  /** Requests the current run to stop; traders finish promptly. */
+  public void stop() {
+    synchronized (lifecycle) {
+      stopRequested = true;
+    }
+  }
+
+  /**
+   * The latest metrics for the current or most recent run.
+   *
+   * @return the metrics snapshot
+   */
+  public MetricsSnapshot metrics() {
+    RunMetrics current = metrics;
+    return current == null ? MetricsSnapshot.EMPTY : current.snapshot(System.nanoTime());
+  }
+}

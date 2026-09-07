@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nearest-rank) and a bounded, thread-safe `PercentileTracker` producing a
   `LatencySummary` (p50/p95/p99/max over real samples). Percentiles are computed
   from measured samples, never fabricated, and are exactly unit-testable.
+- Simulator engine: a virtual-thread-per-trader `LoadSimulator` that submits
+  through the **real ingress** (same `engine.submit` path as the API), records
+  the real back-pressure rejection when the queue is full (never bypasses it),
+  and generates a balanced random walk of tick/lot-aligned orders so the book
+  trades. `SimulatorMetricsSink` measures submit-to-processed latency on the
+  matching thread; `RunMetrics`/`MetricsSnapshot` report submitted/accepted/
+  rejected/trades, throughput, and p50/p95/p99 — all from real measurement.
 
 - **Phase 6 — persistence groundwork.** `OrderAccepted` enriched to carry the
   full order (side/price/quantity/account) so the audit log is meaningful.
