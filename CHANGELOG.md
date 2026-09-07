@@ -44,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FillPolicy`: `maxBuyerUnits`/`maxSellerUnits` are the serial pre-trade check;
   `onFill` settles equal-and-opposite with exact arithmetic. No lock — atomic by
   virtue of running only on the matching thread.
+- Phase 3 jqwik property tests over random funded sequences, one per invariant:
+  cash conservation (INV-1), asset conservation (INV-2), no negative balances
+  under adversarial under-funded flows (INV-3), and every trade equal-and-opposite
+  (INV-7). Plus an end-to-end test settling through the engine's matching thread,
+  including an under-funded buyer that fills only what it can afford.
 - Phase 1 jqwik property tests over random order sequences, one per invariant:
   book never crossed (INV-4), price-time priority — first fill hits the best,
   earliest resting order (INV-5), no overfill (INV-6), and matching quantity
