@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 8 — consistent engine snapshot.** A `LedgerView` lets the engine
+  enumerate all accounts and totals; the engine tracks cumulative trade totals
+  and initial totals, and answers an internal `SnapshotRequest` command by
+  building an immutable `EngineSnapshot` (book, resting orders, all balances,
+  initial + cumulative totals) **on the matching thread**. `requestSnapshot`
+  submits through the real ingress and polls for the result — the checker never
+  touches the live book or ledger (§4.4).
+
 - **Phase 7 — simulator metric core.** `LatencyPercentiles` (pure, deterministic
   nearest-rank) and a bounded, thread-safe `PercentileTracker` producing a
   `LatencySummary` (p50/p95/p99/max over real samples). Percentiles are computed

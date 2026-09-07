@@ -7,11 +7,19 @@ import dev.kaloyanyordanov.exchange.book.Order;
 import dev.kaloyanyordanov.exchange.book.OrderBook;
 import dev.kaloyanyordanov.exchange.book.Symbol;
 import dev.kaloyanyordanov.exchange.book.Trade;
-import dev.kaloyanyordanov.exchange.ledger.AccountView;
+import dev.kaloyanyordanov.exchange.ledger.Account;
+import dev.kaloyanyordanov.exchange.ledger.LedgerView;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
 import org.jctools.queues.MpscArrayQueue;
 
 /**
@@ -37,17 +45,31 @@ public final class MatchingEngine {
   private final OrderBook book;
   private final FillPolicy policy;
   private final EventPublisher publisher;
-  // Optional: when present, balance snapshots are published after settlement.
-  // Read only on the matching thread, so the ledger is never touched off-thread.
-  private final AccountView accountView;
+  // Optional: when present, balance snapshots are published after settlement and
+  // engine snapshots include balances. Read only on the matching thread.
+  private final LedgerView ledgerView;
 
   // Touched only by the matching thread (or by a caller in a single-threaded
   // test via processCommand); never shared concurrently.
   private long arrivalSequence;
   private long tradeSequence;
+  private long cumulativeCashFromBuyers;
+  private long cumulativeCashToSellers;
+  private long cumulativeAssetFromSellers;
+  private long cumulativeAssetToBuyers;
+  // Captured at construction (the ledger is funded before the engine is built).
+  private final long initialTotalCash;
+  private final long initialTotalAsset;
+
+  // On-demand snapshot channel: the matching thread publishes here; requesters
+  // poll for a stamp at or beyond their request id.
+  private final AtomicReference<StampedSnapshot> latestSnapshot = new AtomicReference<>();
+  private final AtomicLong snapshotRequestIds = new AtomicLong();
 
   private volatile boolean accepting;
   private Thread worker;
+
+  private record StampedSnapshot(long requestId, EngineSnapshot snapshot) {}
 
   /**
    * Creates an engine with unconstrained matching (no ledger).
@@ -83,24 +105,26 @@ public final class MatchingEngine {
    * @param requestedCapacity the ingress capacity (rounded up to a power of two)
    * @param publisher         the outbound event sink
    * @param policy            the fill policy applied by the matcher
-   * @param accountView       balance source read on the matching thread, or {@code null}
+   * @param ledgerView        ledger view read on the matching thread, or {@code null}
    */
   public MatchingEngine(
       Symbol symbol,
       int requestedCapacity,
       EventPublisher publisher,
       FillPolicy policy,
-      AccountView accountView) {
+      LedgerView ledgerView) {
     Objects.requireNonNull(symbol, "symbol");
     if (requestedCapacity <= 0) {
       throw new IllegalArgumentException("capacity must be positive: " + requestedCapacity);
     }
     this.publisher = Objects.requireNonNull(publisher, "publisher");
     this.policy = Objects.requireNonNull(policy, "policy");
-    this.accountView = accountView;
+    this.ledgerView = ledgerView;
     this.ingress = new MpscArrayQueue<>(requestedCapacity);
     this.capacity = ingress.capacity();
     this.book = new OrderBook(symbol);
+    this.initialTotalCash = ledgerView != null ? ledgerView.totalCash() : 0L;
+    this.initialTotalAsset = ledgerView != null ? ledgerView.totalAsset() : 0L;
   }
 
   /**
@@ -177,9 +201,15 @@ public final class MatchingEngine {
   void processCommand(Command command) {
     switch (command) {
       case SubmitOrder submit -> handleSubmit(submit);
+      case SnapshotRequest request -> handleSnapshot(request);
     }
   }
 
+  @SuppressFBWarnings(
+      value = "AT_NONATOMIC_OPERATIONS_ON_SHARED_VARIABLE",
+      justification =
+          "cumulative trade counters are read and written only on the single matching thread;"
+              + " the non-atomic += is safe and never contended")
   private void handleSubmit(SubmitOrder submit) {
     Order order =
         Order.create(
@@ -202,9 +232,61 @@ public final class MatchingEngine {
     tradeSequence += trades.size();
     for (Trade trade : trades) {
       publisher.publish(new TradeExecuted(trade));
+      long notional = trade.notional();
+      cumulativeCashFromBuyers += notional;
+      cumulativeCashToSellers += notional;
+      cumulativeAssetFromSellers += trade.quantity();
+      cumulativeAssetToBuyers += trade.quantity();
     }
     publishAffectedBalances(trades);
     publisher.publish(new BookChanged(book.snapshot()));
+  }
+
+  private void handleSnapshot(SnapshotRequest request) {
+    latestSnapshot.set(new StampedSnapshot(request.requestId(), buildSnapshot()));
+  }
+
+  private EngineSnapshot buildSnapshot() {
+    List<Account> accounts = new ArrayList<>();
+    if (ledgerView != null) {
+      for (long accountId : ledgerView.accountIds()) {
+        accounts.add(ledgerView.account(accountId));
+      }
+    }
+    return new EngineSnapshot(
+        book.snapshot(),
+        book.restingOrders(),
+        accounts,
+        initialTotalCash,
+        initialTotalAsset,
+        cumulativeCashFromBuyers,
+        cumulativeCashToSellers,
+        cumulativeAssetFromSellers,
+        cumulativeAssetToBuyers);
+  }
+
+  /**
+   * Requests a consistent snapshot of engine and ledger state, produced on the
+   * matching thread. Never touches the live book or ledger from the caller.
+   *
+   * @param timeout how long to wait for the snapshot
+   * @return the snapshot, or empty if the request was rejected (busy/stopped) or
+   *     did not complete within the timeout
+   */
+  public Optional<EngineSnapshot> requestSnapshot(Duration timeout) {
+    long requestId = snapshotRequestIds.incrementAndGet();
+    if (submit(new SnapshotRequest(requestId)) != SubmitResult.ENQUEUED) {
+      return Optional.empty();
+    }
+    long deadline = System.nanoTime() + timeout.toNanos();
+    while (System.nanoTime() < deadline) {
+      StampedSnapshot stamped = latestSnapshot.get();
+      if (stamped != null && stamped.requestId() >= requestId) {
+        return Optional.of(stamped.snapshot());
+      }
+      LockSupport.parkNanos(100_000L);
+    }
+    return Optional.empty();
   }
 
   /**
@@ -214,7 +296,7 @@ public final class MatchingEngine {
    * is configured.
    */
   private void publishAffectedBalances(List<Trade> trades) {
-    if (accountView == null || trades.isEmpty()) {
+    if (ledgerView == null || trades.isEmpty()) {
       return;
     }
     Set<Long> affected = new LinkedHashSet<>();
@@ -225,7 +307,7 @@ public final class MatchingEngine {
     for (long accountId : affected) {
       publisher.publish(
           new AccountUpdated(
-              accountId, accountView.cashOf(accountId), accountView.assetOf(accountId)));
+              accountId, ledgerView.cashOf(accountId), ledgerView.assetOf(accountId)));
     }
   }
 
