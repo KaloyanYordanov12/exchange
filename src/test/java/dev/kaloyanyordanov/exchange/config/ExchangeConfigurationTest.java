@@ -61,15 +61,38 @@ class ExchangeConfigurationTest {
   }
 
   @Test
-  void fundsLedgerFromTraders() {
+  void endowsLedgerAssetFromTradersButNotCash() {
+    // Cash is funded later through the deposit path, so the ledger starts with the
+    // genesis asset and zero cash.
     Ledger ledger = configuration.ledger(PROPERTIES);
-    assertThat(ledger.cashOf(1L)).isEqualTo(500L);
+    assertThat(ledger.cashOf(1L)).isZero();
     assertThat(ledger.assetOf(1L)).isEqualTo(20L);
   }
 
   @Test
-  void seedsReadModelFromTraders() {
+  void seedsReadModelAssetFromTradersButNotCash() {
     MarketDataCache cache = configuration.marketDataCache(PROPERTIES);
+    assertThat(cache.balanceOf(1L)).contains(new Account(1L, 0L, 20L));
+  }
+
+  @Test
+  void genesisFunderDepositsOpeningCashThroughTheEngine() throws InterruptedException {
+    MarketDataCache cache = configuration.marketDataCache(PROPERTIES);
+    Ledger ledger = configuration.ledger(PROPERTIES);
+    MatchingEngine engine =
+        configuration.matchingEngine(
+            configuration.symbol(PROPERTIES),
+            PROPERTIES,
+            configuration.fanoutPublisher(
+                cache, broadcaster(), new SimulatorMetricsSink(), noPersistence()),
+            ledger);
+    engine.start();
+    configuration.genesisFunder(engine, PROPERTIES).fund();
+    engine.stop();
+
+    // The opening cash arrived via the deposit path (ledger credited, read model
+    // updated by the AccountUpdated event), not off-thread seeding.
+    assertThat(ledger.cashOf(1L)).isEqualTo(500L);
     assertThat(cache.balanceOf(1L)).contains(new Account(1L, 500L, 20L));
   }
 

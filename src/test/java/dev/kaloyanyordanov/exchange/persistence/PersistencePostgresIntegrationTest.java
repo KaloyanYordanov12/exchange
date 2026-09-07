@@ -10,6 +10,7 @@ import dev.kaloyanyordanov.exchange.engine.SubmitOrder;
 import dev.kaloyanyordanov.exchange.payment.FundingStatus;
 import dev.kaloyanyordanov.exchange.payment.PaymentService;
 import java.time.Duration;
+import java.util.List;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
@@ -80,31 +81,37 @@ class PersistencePostgresIntegrationTest {
   @Test
   @Order(2)
   void persistsDepositsAndWithdrawalsToTheLedgerLog() {
-    // A dedicated account (3) so the funding movements do not disturb the trade
-    // test's balances; the deposit funds the withdrawal.
+    // A dedicated account (3, not a configured genesis account) so the movements
+    // are isolated from the genesis funding and the trade test; the deposit funds
+    // the withdrawal.
     assertThat(paymentService.deposit(3L, 5_000L).status()).isEqualTo(FundingStatus.ACCEPTED);
     assertThat(paymentService.withdraw(3L, 2_000L).status()).isEqualTo(FundingStatus.APPLIED);
 
     await()
         .atMost(Duration.ofSeconds(15))
-        .untilAsserted(() -> assertThat(ledgerTransactionRepository.count()).isEqualTo(2L));
+        .untilAsserted(() -> assertThat(rowsForAccount(3L)).hasSize(2));
 
     LedgerTransactionEntity deposit =
-        ledgerTransactionRepository.findAll().stream()
+        rowsForAccount(3L).stream()
             .filter(row -> row.getTransactionType() == LedgerTransactionType.DEPOSIT)
             .findFirst()
             .orElseThrow();
-    assertThat(deposit.getAccountId()).isEqualTo(3L);
     assertThat(deposit.getAmount()).isEqualTo(5_000L);
     assertThat(deposit.getProviderReference()).startsWith("demo-deposit-");
     assertThat(deposit.getCreatedAt()).isNotNull();
 
     LedgerTransactionEntity withdrawal =
-        ledgerTransactionRepository.findAll().stream()
+        rowsForAccount(3L).stream()
             .filter(row -> row.getTransactionType() == LedgerTransactionType.WITHDRAWAL)
             .findFirst()
             .orElseThrow();
     assertThat(withdrawal.getAmount()).isEqualTo(2_000L);
     assertThat(withdrawal.getProviderReference()).startsWith("demo-withdrawal-");
+  }
+
+  private List<LedgerTransactionEntity> rowsForAccount(long accountId) {
+    return ledgerTransactionRepository.findAll().stream()
+        .filter(row -> row.getAccountId() == accountId)
+        .toList();
   }
 }

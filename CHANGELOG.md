@@ -43,6 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conserve, and the checker is proven to detect a violation of the new law. Asset
   conservation is unchanged (asset has no deposit path; it flows only via a
   one-time genesis endowment).
+- **Opening balances funded through the deposit path.** Configured accounts are no
+  longer seeded by mutating the ledger off-thread. A `GenesisFunder` deposits each
+  account's opening cash through the engine once it has started (audited
+  `genesis-*` `CashDeposited` events), while opening asset stays a one-time
+  pre-start endowment. The ledger and read model now seed only asset; cash arrives
+  via the deposit events — no off-thread balance mutation (§4.4).
 
 - **Phase 8 — consistent engine snapshot.** A `LedgerView` lets the engine
   enumerate all accounts and totals; the engine tracks cumulative trade totals

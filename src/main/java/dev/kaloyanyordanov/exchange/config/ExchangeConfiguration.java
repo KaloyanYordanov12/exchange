@@ -53,33 +53,51 @@ public class ExchangeConfiguration {
   }
 
   /**
-   * The ledger, funded from the configured trader opening balances.
+   * The ledger, endowed with the configured opening <em>asset</em> only. Opening
+   * cash is not seeded here; it is funded through the audited deposit path once the
+   * engine starts (see {@link GenesisFunder}), so the ledger's initial cash is zero
+   * and the deposit-aware conservation law holds from the first command.
    *
    * @param properties the exchange configuration
-   * @return the funded ledger
+   * @return the asset-endowed ledger
    */
   @Bean
   public Ledger ledger(ExchangeProperties properties) {
     Ledger ledger = new Ledger();
     for (TraderProperties trader : properties.traders()) {
-      ledger.deposit(trader.accountId(), trader.cash(), trader.asset());
+      ledger.deposit(trader.accountId(), 0L, trader.asset());
     }
     return ledger;
   }
 
   /**
-   * The read model, seeded with the configured opening balances.
+   * The read model, seeded with the configured opening <em>asset</em> only. Opening
+   * cash arrives via the {@code CashDeposited}/{@code AccountUpdated} events emitted
+   * when {@link GenesisFunder} funds each account at startup.
    *
    * @param properties the exchange configuration
-   * @return the seeded read model
+   * @return the asset-seeded read model
    */
   @Bean
   public MarketDataCache marketDataCache(ExchangeProperties properties) {
     MarketDataCache cache = new MarketDataCache();
     for (TraderProperties trader : properties.traders()) {
-      cache.seedAccount(trader.accountId(), trader.cash(), trader.asset());
+      cache.seedAccount(trader.accountId(), 0L, trader.asset());
     }
     return cache;
+  }
+
+  /**
+   * Funds the configured accounts' opening cash through the audited deposit path
+   * once the engine has started (replacing off-thread seeding).
+   *
+   * @param engine     the started matching engine
+   * @param properties the exchange configuration
+   * @return the genesis funder
+   */
+  @Bean(initMethod = "fund")
+  public GenesisFunder genesisFunder(MatchingEngine engine, ExchangeProperties properties) {
+    return new GenesisFunder(engine, properties.traders(), Duration.ofSeconds(5));
   }
 
   /**
