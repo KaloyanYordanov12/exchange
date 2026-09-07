@@ -225,6 +225,16 @@
                         <!-- Bootstrap class: excluded from mutation as from coverage. -->
                         <param>dev.kaloyanyordanov.exchange.Application</param>
                     </excludedClasses>
+                    <!-- Concurrency/property tests that spawn many threads are
+                         timing-dependent: using them as mutation-killing tests
+                         makes PIT slow and flaky. They still run in full under
+                         surefire on every `verify`; the fast, deterministic
+                         processCommand/lifecycle unit tests kill the engine's
+                         mutants. This scopes mutation analysis, not the suite. -->
+                    <excludedTestClasses>
+                        <param>*ConcurrencyTest</param>
+                        <param>*ConcurrencyProperties</param>
+                    </excludedTestClasses>
                     <outputFormats>
                         <param>HTML</param>
                         <param>XML</param>

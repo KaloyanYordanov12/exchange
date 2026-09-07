@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   thread that solely owns the book and sequence counters (no locks); `submit`
   returns busy on a full queue and never blocks; drain-and-stop lifecycle;
   per-command core logic (`processCommand`) unit-testable without threads.
+- Phase 2 concurrency tests: 12k virtual-thread producers → every order processed
+  exactly once (dense `0..n-1` sequences, no loss/duplication) and the final book
+  equals the deterministic single-threaded replay of the processed sequence;
+  bounded-queue back-pressure returns busy without blocking or losing commands;
+  and a jqwik property confirming random concurrent submission stays non-crossed
+  and replay-identical. PIT scopes out these timing-dependent tests (they still
+  run in full under surefire).
 - Phase 1 jqwik property tests over random order sequences, one per invariant:
   book never crossed (INV-4), price-time priority — first fill hits the best,
   earliest resting order (INV-5), no overfill (INV-6), and matching quantity
