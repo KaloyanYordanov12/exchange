@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   partial-fills; rests only non-crossing remainders (never leaves the book
   crossed). `FillPolicy` hook injects affordability caps + immediate settlement
   in Phase 3; Phase 1 runs `UNCONSTRAINED`.
+- **Phase 2 — matching engine + MPSC ingress.** Sealed `Command`/`SubmitOrder`
+  (self-validating; arrival sequence assigned on the matching thread), immutable
+  sealed `EngineEvent`s (`OrderAccepted`, `TradeExecuted`, `BookChanged`,
+  `OrderRejected`), `SubmitResult` (enqueued / busy / not-running), and the
+  `EventPublisher` egress sink.
 - Phase 1 jqwik property tests over random order sequences, one per invariant:
   book never crossed (INV-4), price-time priority — first fill hits the best,
   earliest resting order (INV-5), no overfill (INV-6), and matching quantity
