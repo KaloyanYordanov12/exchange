@@ -9,9 +9,12 @@ import dev.kaloyanyordanov.exchange.engine.FanoutPublisher;
 import dev.kaloyanyordanov.exchange.engine.MarketDataCache;
 import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
 import dev.kaloyanyordanov.exchange.ledger.Ledger;
+import dev.kaloyanyordanov.exchange.persistence.PersistenceWorker;
 import dev.kaloyanyordanov.exchange.realtime.MarketDataWebSocketHandler;
 import dev.kaloyanyordanov.exchange.realtime.ThrottledBroadcaster;
+import java.util.ArrayList;
 import java.util.List;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -87,17 +90,22 @@ public class ExchangeConfiguration {
   }
 
   /**
-   * Fans engine events out to the read model and the broadcaster (the persistence
-   * sink is added in Phase 6).
+   * Fans engine events out to the read model, the broadcaster, and — when the
+   * {@code persistence} profile is active — the async persistence worker.
    *
-   * @param marketDataCache the read model sink
-   * @param broadcaster     the broadcast sink
+   * @param marketDataCache   the read model sink
+   * @param broadcaster       the broadcast sink
+   * @param persistenceWorker the optional persistence sink (present under the profile)
    * @return the fan-out publisher
    */
   @Bean
   public FanoutPublisher fanoutPublisher(
-      MarketDataCache marketDataCache, ThrottledBroadcaster broadcaster) {
-    return new FanoutPublisher(List.<EventPublisher>of(marketDataCache, broadcaster));
+      MarketDataCache marketDataCache,
+      ThrottledBroadcaster broadcaster,
+      ObjectProvider<PersistenceWorker> persistenceWorker) {
+    List<EventPublisher> sinks = new ArrayList<>(List.of(marketDataCache, broadcaster));
+    persistenceWorker.ifAvailable(sinks::add);
+    return new FanoutPublisher(sinks);
   }
 
   /**

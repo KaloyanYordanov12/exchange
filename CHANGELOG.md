@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AsyncEventConsumer`: a bounded-queue, own-thread, batched outbound sink whose
   `publish` is a non-blocking enqueue (drop-and-count on full) — the mechanism
   that keeps a slow consumer (e.g. the database) off the matching hot path.
+- Async Postgres persistence, **profile-gated** (`persistence`) so the app runs
+  fully in-memory by default (DB never a matching dependency). Flyway migration
+  (`accounts`, `orders`, `trades`; scaled-integer BIGINT columns), JPA entities +
+  repositories, and a `PersistenceWorker` that maps the audit stream to entities
+  and writes them in batched transactions on its own thread. Added to the event
+  fan-out only when the profile is active.
 
 - **Phase 5 — throttled broadcaster core.** `ThrottledBroadcaster` consumes the
   event stream on the matching thread with only lock-free work (coalesce the

@@ -1,6 +1,7 @@
 package dev.kaloyanyordanov.exchange.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import dev.kaloyanyordanov.exchange.api.ApiKeyAuthFilter;
 import dev.kaloyanyordanov.exchange.api.TraderRegistry;
@@ -15,10 +16,12 @@ import dev.kaloyanyordanov.exchange.engine.MarketDataCache;
 import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
 import dev.kaloyanyordanov.exchange.ledger.Account;
 import dev.kaloyanyordanov.exchange.ledger.Ledger;
+import dev.kaloyanyordanov.exchange.persistence.PersistenceWorker;
 import dev.kaloyanyordanov.exchange.realtime.MarketDataWebSocketHandler;
 import dev.kaloyanyordanov.exchange.realtime.ThrottledBroadcaster;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import tools.jackson.databind.ObjectMapper;
 
@@ -37,6 +40,12 @@ class ExchangeConfigurationTest {
 
   private ThrottledBroadcaster broadcaster() {
     return configuration.broadcaster(MAPPER, PROPERTIES);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static ObjectProvider<PersistenceWorker> noPersistence() {
+    // A mocked provider's ifAvailable is a no-op, so no worker is added.
+    return mock(ObjectProvider.class);
   }
 
   @Test
@@ -67,7 +76,7 @@ class ExchangeConfigurationTest {
         configuration.matchingEngine(
             configuration.symbol(PROPERTIES),
             PROPERTIES,
-            configuration.fanoutPublisher(new MarketDataCache(), broadcaster()),
+            configuration.fanoutPublisher(new MarketDataCache(), broadcaster(), noPersistence()),
             configuration.ledger(PROPERTIES));
     assertThat(engine.ingressCapacity()).isEqualTo(1024);
   }
@@ -76,7 +85,7 @@ class ExchangeConfigurationTest {
   void fanoutForwardsToTheReadModelAndBroadcaster() {
     MarketDataCache cache = new MarketDataCache();
     ThrottledBroadcaster broadcaster = broadcaster();
-    FanoutPublisher fanout = configuration.fanoutPublisher(cache, broadcaster);
+    FanoutPublisher fanout = configuration.fanoutPublisher(cache, broadcaster, noPersistence());
     BookSnapshot snapshot = new BookSnapshot(List.of(new PriceLevel(100L, 5L)), List.of());
     fanout.publish(new BookChanged(snapshot));
     assertThat(cache.book()).isEqualTo(snapshot);
