@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase M1 — multi-pair backend (in progress).** Shared cash owner: a
+  `CashLedger` actor is the single owner of every account's cash (the quote
+  currency), which — unlike per-pair asset holdings — is spendable on any pair and
+  so cannot live inside one engine. Five matching threads never touch cash by
+  shared memory; they send the actor immutable command messages (deposit,
+  withdraw, reserve, release, settle) drained serially off one lock-free MPSC
+  ingress, so check-then-commit is atomic without a lock — the same guarantee each
+  engine's single-threaded core has. Affordability becomes a buying-power
+  **reservation** taken before a buy enters a book; fills settle from reserved to
+  the seller, price improvements are released, and reserved cash is never
+  withdrawable. Proven race-free: a 1,000-thread contention test spends a fixed
+  purse exactly once (no double-spend), a concurrent cross-pair flow by one account
+  conserves cash, and a model-based property checks
+  `Σ(available+reserved) == Σdeposited − Σwithdrawn` with no negative balance after
+  every operation.
+
 - **Phase 8.5 — accounts + deposits/withdrawals (demo provider).** Public account
   registration (`POST /register`): `TraderRegistry` now creates accounts at
   runtime and returns a generated API key **once** (only its bcrypt hash is kept);
