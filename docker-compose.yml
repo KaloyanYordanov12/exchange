@@ -1,0 +1,39 @@
+# Local orchestration for the exchange.
+#
+# Phase 0: only the `app` service is exercised. The `postgres` service is wired
+# ahead of Phase 6 (durable audit log + read source). The app does NOT connect
+# to it yet — no datasource is configured — so `postgres` is here purely so the
+# topology is ready when persistence lands.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: exchange:local
+    container_name: exchange-app
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    # No dependency on postgres yet: the app does not connect in Phase 0.
+
+  postgres:
+    image: postgres:18.6
+    container_name: exchange-postgres
+    environment:
+      POSTGRES_DB: exchange
+      POSTGRES_USER: exchange
+      POSTGRES_PASSWORD: exchange
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Not consumed by the app until Phase 6 wires the datasource + Flyway.
+
+volumes:
+  pgdata:

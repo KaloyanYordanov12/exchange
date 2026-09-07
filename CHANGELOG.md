@@ -40,3 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JCTools (`jctools-core` 4.0.7, compile scope) wired and proven runnable with a
   unit test that offers and polls a `MpscArrayQueue<Long>` in FIFO order. This is
   the ingress ring buffer for later phases.
+- Multi-stage `Dockerfile`: `eclipse-temurin:25-jdk` build stage (runs
+  `./mvnw -B clean package`, tests included) and a slim, non-root
+  `eclipse-temurin:25-jre` runtime. `.dockerignore` keeps the context lean.
+  Image builds and the container serves `/actuator/health` → `200 UP`.
+- `docker-compose.yml` wiring the app plus a pinned `postgres:18.6` service for
+  Phase 6's benefit; the app does not connect to it yet.

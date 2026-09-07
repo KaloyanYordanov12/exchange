@@ -1,0 +1,12 @@
+# Keep the build context small and clean; the Dockerfile builds from source.
+target/
+.git/
+.github/
+.idea/
+*.iml
+node_modules/
+dist/
+*.log
+
+# Working/planning docs — never part of the build context.
+exchange-*.md
