@@ -56,3 +56,6 @@ exchange-phase-0-brief.md
 exchange-core-brief.md
 exchange-api-realtime-persistence-brief.md
 exchange-simulator-invariants-brief.md
+
+# jqwik run database (per-run artifact; not source)
+.jqwik-database
