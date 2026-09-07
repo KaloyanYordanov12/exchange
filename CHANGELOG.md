@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SOL/USD, XRP/USD, DOGE/USD — as the default catalog, spanning five orders of price
   magnitude (BTC ~10^10 down to DOGE ~10^4 micro-USD). Scaled-integer price and
   notional math is proven exact at both the BTC and DOGE magnitudes.
+- **Phase M1 — multi-pair backend (in progress).** Per-pair `AssetLedger`: an
+  asset-only ledger + fill policy owned by one engine's matching thread. The seller
+  is capped to the asset it holds (no negative asset); the buyer is unconstrained
+  because its cash was reserved in the shared `CashLedger` before the order entered
+  the book. Asset never crosses engines, so it stays plain single-thread state.
 - **Phase M1 — multi-pair backend (in progress).** Shared cash owner: a
   `CashLedger` actor is the single owner of every account's cash (the quote
   currency), which — unlike per-pair asset holdings — is spendable on any pair and
