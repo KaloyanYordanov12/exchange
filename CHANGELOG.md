@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sealed `EngineEvent`s (`OrderAccepted`, `TradeExecuted`, `BookChanged`,
   `OrderRejected`), `SubmitResult` (enqueued / busy / not-running), and the
   `EventPublisher` egress sink.
+- `MatchingEngine`: bounded `MpscArrayQueue` ingress; one dedicated matching
+  thread that solely owns the book and sequence counters (no locks); `submit`
+  returns busy on a full queue and never blocks; drain-and-stop lifecycle;
+  per-command core logic (`processCommand`) unit-testable without threads.
 - Phase 1 jqwik property tests over random order sequences, one per invariant:
   book never crossed (INV-4), price-time priority — first fill hits the best,
   earliest resting order (INV-5), no overfill (INV-6), and matching quantity
