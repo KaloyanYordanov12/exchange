@@ -70,7 +70,8 @@ class ExchangeConfigurationTest {
     PaymentService payment = configuration.paymentService(provider, cash, 2000L);
     ExchangeRegistry registry =
         configuration.exchangeRegistry(
-            PROPERTIES, cash, payment, broadcaster(), noPersistence(), 2000L, 1000L, 2000L);
+            PROPERTIES, cash, payment, broadcaster(), noPersistence(), configuration.candleStore(),
+            2000L, 1000L, 2000L);
     assertThat(registry.pairs()).hasSize(5);
     assertThat(registry.hasPair("BTC-USD")).isTrue();
     assertThat(registry.hasPair("DOGE-USD")).isTrue();

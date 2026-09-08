@@ -137,6 +137,25 @@ class ExchangeApiIntegrationTest {
                     .isEqualTo(assetBefore + 10L));
   }
 
+  @Test
+  void candlesAreBuiltFromRealTrades() throws Exception {
+    placeOrder(BOB_KEY, "SELL", 100L, 4L);
+    placeOrder(ALICE_KEY, "BUY", 100L, 4L); // crosses -> a real trade
+
+    // The async candle aggregator folds the trade into a 1m candle, queryable and
+    // labeled REAL (no seed in M2, so realBoundary is set).
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () ->
+                mockMvc
+                    .perform(get("/candles").param("pair", PAIR).param("timeframe", "1m"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.candles").isNotEmpty())
+                    .andExpect(jsonPath("$.realBoundary").isNumber())
+                    .andExpect(jsonPath("$.candles[0].source").value("REAL")));
+  }
+
   private void placeOrder(String key, String side, long price, long quantity) throws Exception {
     mockMvc
         .perform(

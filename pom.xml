@@ -312,6 +312,13 @@
                         <param>HTML</param>
                         <param>XML</param>
                     </outputFormats>
+                    <!-- Bounded so mutation analysis fits in constrained memory: a
+                         single minion with a capped heap (the excluded slow Spring
+                         tests never run here, so the fast unit tests fit easily). -->
+                    <threads>1</threads>
+                    <jvmArgs>
+                        <value>-Xmx640m</value>
+                    </jvmArgs>
                     <mutationThreshold>70</mutationThreshold>
                 </configuration>
                 <executions>

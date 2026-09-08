@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SOL/USD, XRP/USD, DOGE/USD — as the default catalog, spanning five orders of price
   magnitude (BTC ~10^10 down to DOGE ~10^4 micro-USD). Scaled-integer price and
   notional math is proven exact at both the BTC and DOGE magnitudes.
+- **Phase M2 — OHLCV candle aggregation.** Each pair's trade stream is folded into
+  candles across every timeframe (1m, 5m, 15m, 1h, 4h, 1d, 1w, 1M; the `1y` view is
+  daily candles over a range) by a per-pair async `CandleAggregatorWorker` off the
+  matching hot path (it stamps each drained batch with a monotonic wall clock, since
+  events carry no clock). Candles live in a thread-safe in-memory `CandleStore`
+  (derived data, rebuildable from the persisted trade log and the startup seed) and
+  are queryable via `GET /candles?pair&timeframe&from&to`, which also exposes the
+  SEEDED/REAL boundary. The candle invariants are property-tested over random trade
+  streams: `high >= max(open,close)`, `low <= min(open,close)`, `low <= high`, volume
+  equals summed quantities, each timeframe's sequence is aligned and gap/overlap-free,
+  and every larger candle exactly rolls up its 1m base candles; a corruption case
+  confirms the checker rejects bad candles.
 - **Phase M1 — multi-pair backend (complete).** Five independent engines routed by
   pair: an `ExchangeRegistry` owns one `MatchingEngine` (its own thread, book, asset
   ledger, read model, invariant monitor, and simulator) per pair - BTC/USD, ETH/USD,

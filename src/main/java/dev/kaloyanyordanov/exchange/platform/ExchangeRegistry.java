@@ -5,6 +5,8 @@ import dev.kaloyanyordanov.exchange.api.PlacementOutcome;
 import dev.kaloyanyordanov.exchange.book.BookSnapshot;
 import dev.kaloyanyordanov.exchange.book.Side;
 import dev.kaloyanyordanov.exchange.book.Symbol;
+import dev.kaloyanyordanov.exchange.candle.CandleAggregatorWorker;
+import dev.kaloyanyordanov.exchange.candle.CandleStore;
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties.PairProperties;
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties.TraderProperties;
 import dev.kaloyanyordanov.exchange.config.GenesisFunder;
@@ -52,6 +54,7 @@ public final class ExchangeRegistry {
     private final ExchangeService service;
     private final InvariantMonitor monitor;
     private final LoadSimulator simulator;
+    private final CandleAggregatorWorker candleWorker;
 
     private PairEngine(
         Symbol symbol,
@@ -60,7 +63,8 @@ public final class ExchangeRegistry {
         MarketDataCache marketData,
         ExchangeService service,
         InvariantMonitor monitor,
-        LoadSimulator simulator) {
+        LoadSimulator simulator,
+        CandleAggregatorWorker candleWorker) {
       this.symbol = symbol;
       this.properties = properties;
       this.engine = engine;
@@ -68,6 +72,7 @@ public final class ExchangeRegistry {
       this.service = service;
       this.monitor = monitor;
       this.simulator = simulator;
+      this.candleWorker = candleWorker;
     }
   }
 
@@ -87,6 +92,7 @@ public final class ExchangeRegistry {
    * @param paymentService      the deposit/withdrawal orchestrator
    * @param broadcaster         the shared real-time broadcast sink
    * @param persistence         the optional shared persistence sink
+   * @param candleStore         the shared candle store the per-pair aggregators feed
    * @param traders             the configured traders (for genesis endowment)
    * @param ledgerTimeout       reservation/snapshot timeout
    * @param checkIntervalMillis the invariant check interval
@@ -105,6 +111,7 @@ public final class ExchangeRegistry {
       PaymentService paymentService,
       EventPublisher broadcaster,
       EventPublisher persistence,
+      CandleStore candleStore,
       List<TraderProperties> traders,
       Duration ledgerTimeout,
       long checkIntervalMillis,
@@ -123,7 +130,10 @@ public final class ExchangeRegistry {
         marketData.seedAsset(trader.accountId(), trader.asset());
       }
       SimulatorMetricsSink metricsSink = new SimulatorMetricsSink();
-      List<EventPublisher> sinks = new ArrayList<>(List.of(marketData, broadcaster, metricsSink));
+      CandleAggregatorWorker candleWorker =
+          new CandleAggregatorWorker(symbol.pairId(), candleStore, ingressCapacity, 500);
+      List<EventPublisher> sinks =
+          new ArrayList<>(List.of(marketData, broadcaster, metricsSink, candleWorker));
       if (persistence != null) {
         sinks.add(persistence);
       }
@@ -148,7 +158,8 @@ public final class ExchangeRegistry {
 
       pairs.put(
           symbol.pairId(),
-          new PairEngine(symbol, config, engine, marketData, service, monitor, simulator));
+          new PairEngine(
+              symbol, config, engine, marketData, service, monitor, simulator, candleWorker));
       index++;
     }
   }
@@ -158,6 +169,7 @@ public final class ExchangeRegistry {
     cashLedger.start();
     new GenesisFunder(cashLedger, traders, genesisTimeout).fund();
     for (PairEngine pair : pairs.values()) {
+      pair.candleWorker.start();
       pair.engine.start();
       pair.monitor.start();
     }
@@ -172,6 +184,7 @@ public final class ExchangeRegistry {
     for (PairEngine pair : pairs.values()) {
       pair.monitor.stop();
       pair.engine.stop();
+      pair.candleWorker.stop();
     }
     cashLedger.stop();
   }

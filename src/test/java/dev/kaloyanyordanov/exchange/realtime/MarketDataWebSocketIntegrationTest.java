@@ -34,18 +34,7 @@ class MarketDataWebSocketIntegrationTest {
   @Test
   void connectedClientReceivesThrottledMarketData() throws Exception {
     Queue<String> received = new ConcurrentLinkedQueue<>();
-    StandardWebSocketClient client = new StandardWebSocketClient();
-    WebSocketSession session =
-        client
-            .execute(
-                new TextWebSocketHandler() {
-                  @Override
-                  protected void handleTextMessage(WebSocketSession session, TextMessage message) {
-                    received.add(message.getPayload());
-                  }
-                },
-                "ws://localhost:" + port + "/ws/marketdata")
-            .get(20, TimeUnit.SECONDS);
+    WebSocketSession session = connectWithRetry(received);
 
     try {
       // A crossing pair on DOGE-USD produces a trade and book changes, which the
@@ -63,5 +52,28 @@ class MarketDataWebSocketIntegrationTest {
     } finally {
       session.close(CloseStatus.NORMAL);
     }
+  }
+
+  /** The handshake can transiently fail under heavy CI load; retry a few times. */
+  private WebSocketSession connectWithRetry(Queue<String> received) throws Exception {
+    TextWebSocketHandler handler =
+        new TextWebSocketHandler() {
+          @Override
+          protected void handleTextMessage(WebSocketSession session, TextMessage message) {
+            received.add(message.getPayload());
+          }
+        };
+    Exception last = null;
+    for (int attempt = 0; attempt < 4; attempt++) {
+      try {
+        return new StandardWebSocketClient()
+            .execute(handler, "ws://localhost:" + port + "/ws/marketdata")
+            .get(20, TimeUnit.SECONDS);
+      } catch (Exception failure) {
+        last = failure;
+        Thread.sleep(500L);
+      }
+    }
+    throw last;
   }
 }

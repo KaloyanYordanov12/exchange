@@ -3,6 +3,8 @@ package dev.kaloyanyordanov.exchange.config;
 import dev.kaloyanyordanov.exchange.api.AdminAuthFilter;
 import dev.kaloyanyordanov.exchange.api.ApiKeyAuthFilter;
 import dev.kaloyanyordanov.exchange.api.TraderRegistry;
+import dev.kaloyanyordanov.exchange.candle.CandleService;
+import dev.kaloyanyordanov.exchange.candle.CandleStore;
 import dev.kaloyanyordanov.exchange.engine.EventPublisher;
 import dev.kaloyanyordanov.exchange.ledger.CashLedger;
 import dev.kaloyanyordanov.exchange.ledger.CashLedgerListener;
@@ -96,15 +98,38 @@ public class ExchangeConfiguration {
   }
 
   /**
+   * The shared in-memory candle store the per-pair aggregators feed and the chart API
+   * reads.
+   *
+   * @return the candle store
+   */
+  @Bean
+  public CandleStore candleStore() {
+    return new CandleStore();
+  }
+
+  /**
+   * The candle query facade for the chart API.
+   *
+   * @param candleStore the candle store
+   * @return the candle service
+   */
+  @Bean
+  public CandleService candleService(CandleStore candleStore) {
+    return new CandleService(candleStore);
+  }
+
+  /**
    * The exchange registry: one engine per configured pair, routed by pair id. It
-   * starts the cash ledger and every engine and monitor on context start, and stops
-   * them in reverse on shutdown.
+   * starts the cash ledger and every engine, candle worker, and monitor on context
+   * start, and stops them in reverse on shutdown.
    *
    * @param properties     the exchange configuration
    * @param cashLedger     the shared cash ledger
    * @param paymentService the deposit/withdrawal orchestrator
    * @param broadcaster    the shared real-time broadcast sink
    * @param persistence    the optional shared persistence sink
+   * @param candleStore    the shared candle store
    * @param ledgerTimeout  the reservation/balance snapshot timeout in millis
    * @param intervalMillis the invariant check interval
    * @param timeoutMillis  the invariant snapshot timeout
@@ -117,6 +142,7 @@ public class ExchangeConfiguration {
       PaymentService paymentService,
       ThrottledBroadcaster broadcaster,
       ObjectProvider<PersistenceWorker> persistence,
+      CandleStore candleStore,
       @Value("${exchange.ledger.timeout-millis:2000}") long ledgerTimeout,
       @Value("${exchange.invariant.check-interval-millis:1000}") long intervalMillis,
       @Value("${exchange.invariant.snapshot-timeout-millis:2000}") long timeoutMillis) {
@@ -128,6 +154,7 @@ public class ExchangeConfiguration {
         paymentService,
         broadcaster,
         persistenceSink,
+        candleStore,
         properties.traders(),
         Duration.ofMillis(ledgerTimeout),
         intervalMillis,

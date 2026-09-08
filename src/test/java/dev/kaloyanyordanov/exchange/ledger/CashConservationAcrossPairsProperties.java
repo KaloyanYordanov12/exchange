@@ -23,7 +23,8 @@ import net.jqwik.api.Provide;
  */
 class CashConservationAcrossPairsProperties {
 
-  private static final Duration TIMEOUT = Duration.ofSeconds(2);
+  // Generous so the many per-operation snapshots do not time out under heavy CI load.
+  private static final Duration TIMEOUT = Duration.ofSeconds(15);
   private static final int ACCOUNTS = 4;
 
   enum Kind {

@@ -5,6 +5,7 @@ import static org.awaitility.Awaitility.await;
 
 import dev.kaloyanyordanov.exchange.api.PlacementOutcome;
 import dev.kaloyanyordanov.exchange.book.Side;
+import dev.kaloyanyordanov.exchange.candle.CandleStore;
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties.PairProperties;
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties.TraderProperties;
 import dev.kaloyanyordanov.exchange.engine.EventPublisher;
@@ -39,7 +40,8 @@ class ExchangeRegistryTest {
             new TraderProperties(2L, "h", 1_000_000L, 1_000L));
     registry =
         new ExchangeRegistry(
-            pairs, 4096, cash, payment, noop, null, traders, TIMEOUT, 1000L, 2000L);
+            pairs, 4096, cash, payment, noop, null, new CandleStore(), traders, TIMEOUT, 1000L,
+            2000L);
     registry.start();
   }
 
