@@ -23,31 +23,19 @@ class InvariantCheckerTest {
           new RestingOrder(2L, Side.BUY, 100L, 5L, 5L, 2L),
           new RestingOrder(3L, Side.SELL, 101L, 4L, 4L, 3L));
   private static final List<AccountBalance> VALID_ACCOUNTS =
-      List.of(new AccountBalance(1L, 500L, 10L), new AccountBalance(2L, 300L, 20L));
+      List.of(new AccountBalance(1L, 10L), new AccountBalance(2L, 20L));
 
-  /**
-   * A snapshot whose accounts, book, and totals are all internally consistent: cash
-   * sums to 800 with initial 800 and no deposits/withdrawals; asset sums to 30 with
-   * initial 30; trade counters balance.
-   */
+  /** A snapshot whose book, resting orders, asset totals, and trade counters are consistent. */
   private static EngineSnapshot valid() {
-    return snapshot(VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 800L, 30L, 0L, 0L);
+    return snapshot(VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 30L);
   }
 
   private static EngineSnapshot snapshot(
-      BookSnapshot book,
-      List<RestingOrder> resting,
-      List<AccountBalance> accounts,
-      long initialCash,
-      long initialAsset,
-      long deposited,
-      long withdrawn) {
-    return new EngineSnapshot(
-        book, resting, accounts, initialCash, initialAsset, deposited, withdrawn,
-        1_000L, 1_000L, 10L, 10L);
+      BookSnapshot book, List<RestingOrder> resting, List<AccountBalance> accounts, long asset) {
+    return new EngineSnapshot(book, resting, accounts, asset, 1_000L, 1_000L, 10L, 10L);
   }
 
-  private static boolean failed(CheckReport report, Invariant invariant) {
+  private static boolean passed(CheckReport report, Invariant invariant) {
     return report.results().stream()
         .filter(result -> result.invariant() == invariant)
         .findFirst()
@@ -58,65 +46,37 @@ class InvariantCheckerTest {
   private static void assertDetects(EngineSnapshot corrupted, Invariant invariant) {
     CheckReport report = InvariantChecker.check(corrupted);
     assertThat(report.allPassed()).isFalse();
-    assertThat(failed(report, invariant)).as("%s should have failed", invariant).isFalse();
+    assertThat(passed(report, invariant)).as("%s should have failed", invariant).isFalse();
   }
 
   @Test
-  void validSnapshotPassesEveryInvariant() {
+  void validSnapshotPassesEverySixInvariants() {
     CheckReport report = InvariantChecker.check(valid());
     assertThat(report.allPassed()).isTrue();
-    assertThat(report.results()).hasSize(7).allMatch(InvariantResult::passed);
-  }
-
-  @Test
-  void cashConservationHoldsUnderDepositsAndWithdrawals() {
-    // Cash sums to 800 = initial 500 + deposited 400 - withdrawn 100.
-    CheckReport report =
-        InvariantChecker.check(
-            snapshot(VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 500L, 30L, 400L, 100L));
-    assertThat(report.allPassed()).isTrue();
-  }
-
-  @Test
-  void detectsCashConservationViolationAgainstStaticInitial() {
-    // No deposits/withdrawals, so cash must equal the initial 999 (it sums to 800).
-    assertDetects(
-        snapshot(VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 999L, 30L, 0L, 0L),
-        Invariant.CASH_CONSERVATION);
-  }
-
-  @Test
-  void detectsCashConservationViolationAgainstDepositAwareLaw() {
-    // Cash sums to 800 but the deposit-aware law expects 500 + 400 - 200 = 700.
-    assertDetects(
-        snapshot(VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 500L, 30L, 400L, 200L),
-        Invariant.CASH_CONSERVATION);
+    assertThat(report.results()).hasSize(6).allMatch(InvariantResult::passed);
+    assertThat(report.results().stream().map(InvariantResult::invariant))
+        .doesNotContain(Invariant.CASH_CONSERVATION);
   }
 
   @Test
   void detectsAssetConservationViolation() {
     assertDetects(
-        snapshot(VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 800L, 999L, 0L, 0L),
-        Invariant.ASSET_CONSERVATION);
+        snapshot(VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 999L), Invariant.ASSET_CONSERVATION);
   }
 
   @Test
-  void detectsNegativeBalance() {
-    // Cash still sums to 800 (conservation holds), but one balance is negative.
+  void detectsNegativeAsset() {
     List<AccountBalance> accounts =
-        List.of(new AccountBalance(1L, -100L, 10L), new AccountBalance(2L, 900L, 20L));
+        List.of(new AccountBalance(1L, -5L), new AccountBalance(2L, 35L));
     assertDetects(
-        snapshot(VALID_BOOK, VALID_RESTING, accounts, 800L, 30L, 0L, 0L),
-        Invariant.NO_NEGATIVE_BALANCES);
+        snapshot(VALID_BOOK, VALID_RESTING, accounts, 30L), Invariant.NO_NEGATIVE_BALANCES);
   }
 
   @Test
   void detectsOverfilledOrder() {
     List<RestingOrder> resting =
         List.of(new RestingOrder(1L, Side.BUY, 100L, 5L, 6L, 1L)); // remaining 6 > quantity 5
-    assertDetects(
-        snapshot(VALID_BOOK, resting, VALID_ACCOUNTS, 800L, 30L, 0L, 0L),
-        Invariant.NO_OVERFILL);
+    assertDetects(snapshot(VALID_BOOK, resting, VALID_ACCOUNTS, 30L), Invariant.NO_OVERFILL);
   }
 
   @Test
@@ -126,8 +86,7 @@ class InvariantCheckerTest {
             List.of(new PriceLevel(99L, 3L), new PriceLevel(100L, 10L)), // bids ascending
             List.of(new PriceLevel(101L, 4L)));
     assertDetects(
-        snapshot(book, VALID_RESTING, VALID_ACCOUNTS, 800L, 30L, 0L, 0L),
-        Invariant.PRICE_TIME_PRIORITY);
+        snapshot(book, VALID_RESTING, VALID_ACCOUNTS, 30L), Invariant.PRICE_TIME_PRIORITY);
   }
 
   @Test
@@ -137,34 +96,27 @@ class InvariantCheckerTest {
             new RestingOrder(1L, Side.BUY, 100L, 5L, 5L, 2L),
             new RestingOrder(2L, Side.BUY, 100L, 5L, 5L, 1L)); // sequence goes backwards
     assertDetects(
-        snapshot(VALID_BOOK, resting, VALID_ACCOUNTS, 800L, 30L, 0L, 0L),
-        Invariant.PRICE_TIME_PRIORITY);
+        snapshot(VALID_BOOK, resting, VALID_ACCOUNTS, 30L), Invariant.PRICE_TIME_PRIORITY);
   }
 
   @Test
   void detectsCrossedBook() {
     BookSnapshot book =
         new BookSnapshot(List.of(new PriceLevel(101L, 5L)), List.of(new PriceLevel(100L, 5L)));
-    assertDetects(
-        snapshot(book, VALID_RESTING, VALID_ACCOUNTS, 800L, 30L, 0L, 0L),
-        Invariant.BOOK_NOT_CROSSED);
+    assertDetects(snapshot(book, VALID_RESTING, VALID_ACCOUNTS, 30L), Invariant.BOOK_NOT_CROSSED);
   }
 
   @Test
   void detectsUnbalancedTradeCash() {
-    assertDetects(
-        new EngineSnapshot(
-            VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 800L, 30L, 0L, 0L,
-            1_000L, 999L, 10L, 10L),
-        Invariant.TRADES_BALANCE);
+    EngineSnapshot corrupted =
+        new EngineSnapshot(VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 30L, 1_000L, 999L, 10L, 10L);
+    assertDetects(corrupted, Invariant.TRADES_BALANCE);
   }
 
   @Test
   void detectsUnbalancedTradeAsset() {
-    assertDetects(
-        new EngineSnapshot(
-            VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 800L, 30L, 0L, 0L,
-            1_000L, 1_000L, 10L, 9L),
-        Invariant.TRADES_BALANCE);
+    EngineSnapshot corrupted =
+        new EngineSnapshot(VALID_BOOK, VALID_RESTING, VALID_ACCOUNTS, 30L, 1_000L, 1_000L, 10L, 9L);
+    assertDetects(corrupted, Invariant.TRADES_BALANCE);
   }
 }

@@ -55,6 +55,9 @@ public class ExchangeController {
       case ACCEPTED ->
           ResponseEntity.accepted().body(new OrderResponse(outcome.orderId(), "ACCEPTED"));
       case INVALID -> ResponseEntity.badRequest().body(Map.of("error", outcome.message()));
+      case REJECTED ->
+          ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+              .body(Map.of("error", outcome.message()));
       case BUSY ->
           ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
               .body(Map.of("error", outcome.message()));
@@ -80,7 +83,7 @@ public class ExchangeController {
   @GetMapping("/accounts/me")
   public BalanceResponse me(HttpServletRequest http) {
     long accountId = accountId(http);
-    Account account = service.balance(accountId).orElseGet(() -> new Account(accountId, 0L, 0L));
+    Account account = service.balance(accountId);
     return new BalanceResponse(accountId, account.cash(), account.asset());
   }
 

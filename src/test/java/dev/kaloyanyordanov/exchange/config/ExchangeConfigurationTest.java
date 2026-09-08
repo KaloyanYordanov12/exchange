@@ -15,13 +15,16 @@ import dev.kaloyanyordanov.exchange.engine.BookChanged;
 import dev.kaloyanyordanov.exchange.engine.FanoutPublisher;
 import dev.kaloyanyordanov.exchange.engine.MarketDataCache;
 import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
-import dev.kaloyanyordanov.exchange.ledger.Account;
-import dev.kaloyanyordanov.exchange.ledger.Ledger;
+import dev.kaloyanyordanov.exchange.ledger.AssetLedger;
+import dev.kaloyanyordanov.exchange.ledger.CashAccount;
+import dev.kaloyanyordanov.exchange.ledger.CashLedger;
+import dev.kaloyanyordanov.exchange.ledger.CashLedgerListener;
 import dev.kaloyanyordanov.exchange.persistence.PersistenceWorker;
 import dev.kaloyanyordanov.exchange.realtime.MarketDataWebSocketHandler;
 import dev.kaloyanyordanov.exchange.realtime.ThrottledBroadcaster;
 import dev.kaloyanyordanov.exchange.sim.LoadSimulator;
 import dev.kaloyanyordanov.exchange.sim.SimulatorMetricsSink;
+import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -37,6 +40,7 @@ class ExchangeConfigurationTest {
           1_000,
           List.of(new TraderProperties(1L, "hash", 500L, 20L)),
           null);
+  private static final Duration TIMEOUT = Duration.ofSeconds(2);
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -48,8 +52,17 @@ class ExchangeConfigurationTest {
 
   @SuppressWarnings("unchecked")
   private static ObjectProvider<PersistenceWorker> noPersistence() {
-    // A mocked provider's ifAvailable is a no-op, so no worker is added.
     return mock(ObjectProvider.class);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static ObjectProvider<CashLedgerListener> noListener() {
+    return mock(ObjectProvider.class);
+  }
+
+  private FanoutPublisher publisher(MarketDataCache cache) {
+    return configuration.fanoutPublisher(
+        cache, broadcaster(), new SimulatorMetricsSink(), noPersistence());
   }
 
   @Test
@@ -62,60 +75,52 @@ class ExchangeConfigurationTest {
   }
 
   @Test
-  void endowsLedgerAssetFromTradersButNotCash() {
-    // Cash is funded later through the deposit path, so the ledger starts with the
-    // genesis asset and zero cash.
-    Ledger ledger = configuration.ledger(PROPERTIES);
-    assertThat(ledger.cashOf(1L)).isZero();
+  void endowsAssetLedgerFromTraders() {
+    AssetLedger ledger = configuration.assetLedger(PROPERTIES);
     assertThat(ledger.assetOf(1L)).isEqualTo(20L);
   }
 
   @Test
-  void seedsReadModelAssetFromTradersButNotCash() {
+  void seedsReadModelAssetFromTraders() {
     MarketDataCache cache = configuration.marketDataCache(PROPERTIES);
-    assertThat(cache.balanceOf(1L)).contains(new Account(1L, 0L, 20L));
+    assertThat(cache.assetOf(1L)).contains(20L);
   }
 
   @Test
-  void genesisFunderDepositsOpeningCashThroughTheEngine() throws InterruptedException {
-    MarketDataCache cache = configuration.marketDataCache(PROPERTIES);
-    Ledger ledger = configuration.ledger(PROPERTIES);
+  void genesisFunderDepositsOpeningCashThroughTheCashLedger() throws InterruptedException {
+    CashLedger cash = configuration.cashLedger(PROPERTIES, noListener());
+    cash.start();
+    try {
+      configuration.genesisFunder(cash, PROPERTIES).fund();
+      long available =
+          cash.snapshot(TIMEOUT).orElseThrow().accounts().stream()
+              .filter(account -> account.accountId() == 1L)
+              .findFirst()
+              .map(CashAccount::available)
+              .orElse(0L);
+      assertThat(available).isEqualTo(500L);
+    } finally {
+      cash.stop();
+    }
+  }
+
+  @Test
+  void engineUsesConfiguredCapacity() throws InterruptedException {
+    CashLedger cash = configuration.cashLedger(PROPERTIES, noListener());
     MatchingEngine engine =
         configuration.matchingEngine(
             configuration.symbol(PROPERTIES),
             PROPERTIES,
-            configuration.fanoutPublisher(
-                cache, broadcaster(), new SimulatorMetricsSink(), noPersistence()),
-            ledger);
-    engine.start();
-    configuration.genesisFunder(engine, PROPERTIES).fund();
-    engine.stop();
-
-    // The opening cash arrived via the deposit path (ledger credited, read model
-    // updated by the AccountUpdated event), not off-thread seeding.
-    assertThat(ledger.cashOf(1L)).isEqualTo(500L);
-    assertThat(cache.balanceOf(1L)).contains(new Account(1L, 500L, 20L));
-  }
-
-  @Test
-  void engineUsesConfiguredCapacity() {
-    MatchingEngine engine =
-        configuration.matchingEngine(
-            configuration.symbol(PROPERTIES),
-            PROPERTIES,
-            configuration.fanoutPublisher(
-                new MarketDataCache(), broadcaster(), new SimulatorMetricsSink(), noPersistence()),
-            configuration.ledger(PROPERTIES));
+            publisher(new MarketDataCache()),
+            configuration.assetLedger(PROPERTIES),
+            cash);
     assertThat(engine.ingressCapacity()).isEqualTo(1024);
   }
 
   @Test
   void fanoutForwardsToTheReadModelAndBroadcaster() {
     MarketDataCache cache = new MarketDataCache();
-    ThrottledBroadcaster broadcaster = broadcaster();
-    FanoutPublisher fanout =
-        configuration.fanoutPublisher(
-            cache, broadcaster, new SimulatorMetricsSink(), noPersistence());
+    FanoutPublisher fanout = publisher(cache);
     BookSnapshot snapshot = new BookSnapshot(List.of(new PriceLevel(100L, 5L)), List.of());
     fanout.publish(new BookChanged(snapshot));
     assertThat(cache.book()).isEqualTo(snapshot);
@@ -130,16 +135,17 @@ class ExchangeConfigurationTest {
 
   @Test
   void loadSimulatorIsBuilt() {
+    CashLedger cash = configuration.cashLedger(PROPERTIES, noListener());
     MatchingEngine engine =
         configuration.matchingEngine(
             configuration.symbol(PROPERTIES),
             PROPERTIES,
-            configuration.fanoutPublisher(
-                new MarketDataCache(), broadcaster(), new SimulatorMetricsSink(), noPersistence()),
-            configuration.ledger(PROPERTIES));
+            publisher(new MarketDataCache()),
+            configuration.assetLedger(PROPERTIES),
+            cash);
     LoadSimulator simulator =
         configuration.loadSimulator(
-            engine, configuration.symbol(PROPERTIES), new SimulatorMetricsSink());
+            engine, configuration.symbol(PROPERTIES), cash, new SimulatorMetricsSink());
     assertThat(simulator.isRunning()).isFalse();
   }
 

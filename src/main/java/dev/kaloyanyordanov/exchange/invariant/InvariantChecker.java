@@ -10,24 +10,28 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Verifies the seven correctness invariants against an immutable
+ * Verifies the six per-pair correctness invariants against an immutable
  * {@link EngineSnapshot}. Pure and deterministic: the same snapshot always yields
- * the same report, and a corrupted snapshot fails the relevant invariant — a
- * checker that could only ever say "green" would be worthless (§5).
+ * the same report, and a corrupted snapshot fails the relevant invariant (a checker
+ * that could only ever say "green" would be worthless, per §5).
+ *
+ * <p>Cash conservation is <b>not</b> a per-pair invariant in the multi-pair model:
+ * cash is shared across engines and owned by the cash ledger, so it is verified
+ * separately by {@link CashInvariantChecker} over the whole cash ledger. Each engine
+ * checks only what it owns: its book and its pair's asset.
  */
 public final class InvariantChecker {
 
   private InvariantChecker() {}
 
   /**
-   * Checks every invariant against a snapshot.
+   * Checks every per-pair invariant against an engine snapshot.
    *
    * @param snapshot the engine snapshot
    * @return the report
    */
   public static CheckReport check(EngineSnapshot snapshot) {
     List<InvariantResult> results = new ArrayList<>();
-    results.add(checkCashConservation(snapshot));
     results.add(checkAssetConservation(snapshot));
     results.add(checkNoNegativeBalances(snapshot));
     results.add(checkNoOverfill(snapshot));
@@ -35,24 +39,6 @@ public final class InvariantChecker {
     results.add(checkBookNotCrossed(snapshot));
     results.add(checkTradesBalance(snapshot));
     return CheckReport.of(results);
-  }
-
-  private static InvariantResult checkCashConservation(EngineSnapshot snapshot) {
-    // Deposit-aware conservation: cash is created only by deposits and destroyed
-    // only by withdrawals; trades merely move it between accounts. So the total
-    // must equal the initial cash plus everything deposited minus everything
-    // withdrawn — never off by a fill.
-    long total = snapshot.accounts().stream().mapToLong(AccountBalance::cash).sum();
-    long expected =
-        snapshot.initialTotalCash() + snapshot.totalDeposited() - snapshot.totalWithdrawn();
-    if (total == expected) {
-      return InvariantResult.pass(Invariant.CASH_CONSERVATION);
-    }
-    return InvariantResult.fail(
-        Invariant.CASH_CONSERVATION,
-        "total cash " + total + " != initial " + snapshot.initialTotalCash()
-            + " + deposited " + snapshot.totalDeposited()
-            + " - withdrawn " + snapshot.totalWithdrawn() + " (= " + expected + ")");
   }
 
   private static InvariantResult checkAssetConservation(EngineSnapshot snapshot) {
@@ -67,11 +53,10 @@ public final class InvariantChecker {
 
   private static InvariantResult checkNoNegativeBalances(EngineSnapshot snapshot) {
     for (AccountBalance account : snapshot.accounts()) {
-      if (account.cash() < 0 || account.asset() < 0) {
+      if (account.asset() < 0) {
         return InvariantResult.fail(
             Invariant.NO_NEGATIVE_BALANCES,
-            "account " + account.accountId() + " cash=" + account.cash()
-                + " asset=" + account.asset());
+            "account " + account.accountId() + " asset=" + account.asset());
       }
     }
     return InvariantResult.pass(Invariant.NO_NEGATIVE_BALANCES);

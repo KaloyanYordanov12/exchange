@@ -2,6 +2,7 @@ package dev.kaloyanyordanov.exchange.config;
 
 import dev.kaloyanyordanov.exchange.api.AdminAuthFilter;
 import dev.kaloyanyordanov.exchange.api.ApiKeyAuthFilter;
+import dev.kaloyanyordanov.exchange.api.ExchangeService;
 import dev.kaloyanyordanov.exchange.api.TraderRegistry;
 import dev.kaloyanyordanov.exchange.book.Symbol;
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties.TraderProperties;
@@ -10,7 +11,9 @@ import dev.kaloyanyordanov.exchange.engine.FanoutPublisher;
 import dev.kaloyanyordanov.exchange.engine.MarketDataCache;
 import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
 import dev.kaloyanyordanov.exchange.invariant.InvariantMonitor;
-import dev.kaloyanyordanov.exchange.ledger.Ledger;
+import dev.kaloyanyordanov.exchange.ledger.AssetLedger;
+import dev.kaloyanyordanov.exchange.ledger.CashLedger;
+import dev.kaloyanyordanov.exchange.ledger.CashLedgerListener;
 import dev.kaloyanyordanov.exchange.payment.DemoPaymentProvider;
 import dev.kaloyanyordanov.exchange.payment.PaymentProvider;
 import dev.kaloyanyordanov.exchange.payment.PaymentService;
@@ -32,9 +35,11 @@ import org.springframework.context.annotation.Configuration;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Wires the engine, ledger, read model, and API. The matching engine is started
- * as a bean lifecycle (after the ledger is funded and the read model seeded) and
- * stopped on shutdown, so no request is served before matching is live.
+ * Wires the engine, ledgers, read model, and API. The shared cash ledger and the
+ * matching engine are started as bean lifecycles (the cash ledger before the engine,
+ * which settles into it, and stopped in reverse so no settlement is lost), and the
+ * asset ledger is endowed before its engine starts, so no request is served before
+ * matching is live.
  */
 @Configuration
 @EnableConfigurationProperties(ExchangeProperties.class)
@@ -53,27 +58,39 @@ public class ExchangeConfiguration {
   }
 
   /**
-   * The ledger, endowed with the configured opening <em>asset</em> only. Opening
-   * cash is not seeded here; it is funded through the audited deposit path once the
-   * engine starts (see {@link GenesisFunder}), so the ledger's initial cash is zero
-   * and the deposit-aware conservation law holds from the first command.
+   * The per-pair asset ledger, endowed with the configured opening asset. Cash is not
+   * held here; it lives in the shared cash ledger.
    *
    * @param properties the exchange configuration
    * @return the asset-endowed ledger
    */
   @Bean
-  public Ledger ledger(ExchangeProperties properties) {
-    Ledger ledger = new Ledger();
+  public AssetLedger assetLedger(ExchangeProperties properties) {
+    AssetLedger ledger = new AssetLedger();
     for (TraderProperties trader : properties.traders()) {
-      ledger.deposit(trader.accountId(), 0L, trader.asset());
+      ledger.endow(trader.accountId(), trader.asset());
     }
     return ledger;
   }
 
   /**
-   * The read model, seeded with the configured opening <em>asset</em> only. Opening
-   * cash arrives via the {@code CashDeposited}/{@code AccountUpdated} events emitted
-   * when {@link GenesisFunder} funds each account at startup.
+   * The shared cash ledger (single owner of every account's cash), started/stopped
+   * with the context. Under the persistence profile a {@link CashLedgerListener}
+   * audits its movements.
+   *
+   * @param properties the exchange configuration
+   * @param listener   the optional cash-movement audit sink
+   * @return the cash ledger
+   */
+  @Bean(initMethod = "start", destroyMethod = "stop")
+  public CashLedger cashLedger(
+      ExchangeProperties properties, ObjectProvider<CashLedgerListener> listener) {
+    return new CashLedger(properties.ingressCapacity(), listener.getIfAvailable());
+  }
+
+  /**
+   * The per-pair read model, seeded with the configured opening asset. Cash arrives
+   * from the cash ledger's snapshot when a balance is queried.
    *
    * @param properties the exchange configuration
    * @return the asset-seeded read model
@@ -82,22 +99,22 @@ public class ExchangeConfiguration {
   public MarketDataCache marketDataCache(ExchangeProperties properties) {
     MarketDataCache cache = new MarketDataCache();
     for (TraderProperties trader : properties.traders()) {
-      cache.seedAccount(trader.accountId(), 0L, trader.asset());
+      cache.seedAsset(trader.accountId(), trader.asset());
     }
     return cache;
   }
 
   /**
-   * Funds the configured accounts' opening cash through the audited deposit path
-   * once the engine has started (replacing off-thread seeding).
+   * Funds the configured accounts' opening cash through the shared cash ledger once
+   * it has started (replacing off-thread seeding).
    *
-   * @param engine     the started matching engine
+   * @param cashLedger the started cash ledger
    * @param properties the exchange configuration
    * @return the genesis funder
    */
   @Bean(initMethod = "fund")
-  public GenesisFunder genesisFunder(MatchingEngine engine, ExchangeProperties properties) {
-    return new GenesisFunder(engine, properties.traders(), Duration.ofSeconds(5));
+  public GenesisFunder genesisFunder(CashLedger cashLedger, ExchangeProperties properties) {
+    return new GenesisFunder(cashLedger, properties.traders(), Duration.ofSeconds(5));
   }
 
   /**
@@ -118,12 +135,13 @@ public class ExchangeConfiguration {
   }
 
   /**
-   * Fans engine events out to the read model, the broadcaster, and — when the
-   * {@code persistence} profile is active — the async persistence worker.
+   * Fans engine events out to the read model, the broadcaster, and (under the
+   * {@code persistence} profile) the async persistence worker.
    *
-   * @param marketDataCache   the read model sink
-   * @param broadcaster       the broadcast sink
-   * @param persistenceWorker the optional persistence sink (present under the profile)
+   * @param marketDataCache      the read model sink
+   * @param broadcaster          the broadcast sink
+   * @param simulatorMetricsSink the simulator metrics sink
+   * @param persistenceWorker    the optional persistence sink (present under the profile)
    * @return the fan-out publisher
    */
   @Bean
@@ -149,17 +167,22 @@ public class ExchangeConfiguration {
   }
 
   /**
-   * The load simulator, driving the engine through its real ingress.
+   * The load simulator, driving the engine through its real ingress and reserving a
+   * buy's cash in the shared cash ledger like the API.
    *
-   * @param engine              the matching engine
-   * @param symbol              the traded symbol
+   * @param engine               the matching engine
+   * @param symbol               the traded symbol
+   * @param cashLedger           the shared cash ledger
    * @param simulatorMetricsSink the metrics sink
    * @return the load simulator
    */
   @Bean
   public LoadSimulator loadSimulator(
-      MatchingEngine engine, Symbol symbol, SimulatorMetricsSink simulatorMetricsSink) {
-    return new LoadSimulator(engine, symbol, simulatorMetricsSink);
+      MatchingEngine engine,
+      Symbol symbol,
+      CashLedger cashLedger,
+      SimulatorMetricsSink simulatorMetricsSink) {
+    return new LoadSimulator(engine, symbol, cashLedger, simulatorMetricsSink);
   }
 
   /**
@@ -195,22 +218,58 @@ public class ExchangeConfiguration {
   /**
    * The matching engine, started/stopped with the application context.
    *
-   * @param symbol     the traded symbol
-   * @param properties the exchange configuration
-   * @param publisher  the outbound event sink
-   * @param ledger     the ledger (fill policy and account view)
+   * @param symbol      the traded symbol
+   * @param properties  the exchange configuration
+   * @param publisher   the outbound event sink
+   * @param assetLedger the per-pair asset ledger and fill policy
+   * @param cashLedger  the shared cash ledger for cash settlement
    * @return the matching engine
    */
   @Bean(initMethod = "start", destroyMethod = "stop")
   public MatchingEngine matchingEngine(
-      Symbol symbol, ExchangeProperties properties, FanoutPublisher publisher, Ledger ledger) {
-    return new MatchingEngine(symbol, properties.ingressCapacity(), publisher, ledger, ledger);
+      Symbol symbol,
+      ExchangeProperties properties,
+      FanoutPublisher publisher,
+      AssetLedger assetLedger,
+      CashLedger cashLedger) {
+    return new MatchingEngine(
+        symbol, properties.ingressCapacity(), publisher, assetLedger, cashLedger);
   }
 
   /**
-   * The invariant monitor, checking the seven invariants continuously.
+   * The API gateway bean.
    *
-   * @param engine        the matching engine
+   * @param engine         the matching engine
+   * @param marketData     the read model
+   * @param cashLedger     the shared cash ledger
+   * @param paymentService the deposit/withdrawal orchestrator
+   * @param symbol         the traded symbol
+   * @param timeoutMillis  how long to wait for a reservation or balance snapshot
+   * @return the exchange service
+   */
+  @Bean
+  public ExchangeService exchangeService(
+      MatchingEngine engine,
+      MarketDataCache marketData,
+      CashLedger cashLedger,
+      PaymentService paymentService,
+      Symbol symbol,
+      @Value("${exchange.ledger.timeout-millis:2000}") long timeoutMillis) {
+    return new ExchangeService(
+        engine,
+        marketData,
+        cashLedger,
+        paymentService,
+        symbol,
+        Duration.ofMillis(timeoutMillis),
+        0L);
+  }
+
+  /**
+   * The invariant monitor, checking the per-pair and cash invariants continuously.
+   *
+   * @param engine         the matching engine
+   * @param cashLedger     the shared cash ledger
    * @param intervalMillis the continuous check interval
    * @param timeoutMillis  the per-check snapshot timeout
    * @return the invariant monitor
@@ -218,15 +277,16 @@ public class ExchangeConfiguration {
   @Bean(initMethod = "start", destroyMethod = "stop")
   public InvariantMonitor invariantMonitor(
       MatchingEngine engine,
+      CashLedger cashLedger,
       @Value("${exchange.invariant.check-interval-millis:1000}") long intervalMillis,
       @Value("${exchange.invariant.snapshot-timeout-millis:2000}") long timeoutMillis) {
-    return new InvariantMonitor(engine, intervalMillis, timeoutMillis);
+    return new InvariantMonitor(engine, cashLedger, intervalMillis, timeoutMillis);
   }
 
   /**
-   * The payment provider. Fail-secure: the demo provider is used unless a real
-   * one is explicitly configured as a bean (and none exists), so there is no path
-   * to real money.
+   * The payment provider. Fail-secure: the demo provider is used unless a real one is
+   * explicitly configured as a bean (and none exists), so there is no path to real
+   * money.
    *
    * @return the payment provider
    */
@@ -238,19 +298,19 @@ public class ExchangeConfiguration {
 
   /**
    * The payment service orchestrating deposits and withdrawals across the provider
-   * and the matching thread.
+   * and the shared cash ledger.
    *
-   * @param provider              the payment provider
-   * @param engine                the matching engine
+   * @param provider                the payment provider
+   * @param cashLedger              the shared cash ledger
    * @param withdrawalTimeoutMillis how long to wait for a withdrawal outcome
    * @return the payment service
    */
   @Bean
   public PaymentService paymentService(
       PaymentProvider provider,
-      MatchingEngine engine,
+      CashLedger cashLedger,
       @Value("${exchange.payment.withdrawal-timeout-millis:2000}") long withdrawalTimeoutMillis) {
-    return new PaymentService(provider, engine, Duration.ofMillis(withdrawalTimeoutMillis));
+    return new PaymentService(provider, cashLedger, Duration.ofMillis(withdrawalTimeoutMillis));
   }
 
   /**
@@ -265,8 +325,8 @@ public class ExchangeConfiguration {
   }
 
   /**
-   * Registers the API-key auth filter on the order and account endpoints only;
-   * the book endpoint is public market data.
+   * Registers the API-key auth filter on the order and account endpoints only; the
+   * book endpoint is public market data.
    *
    * @param registry the trader registry
    * @return the filter registration

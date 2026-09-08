@@ -5,9 +5,11 @@ import dev.kaloyanyordanov.exchange.book.FillPolicy;
 import dev.kaloyanyordanov.exchange.book.Matcher;
 import dev.kaloyanyordanov.exchange.book.Order;
 import dev.kaloyanyordanov.exchange.book.OrderBook;
+import dev.kaloyanyordanov.exchange.book.Side;
 import dev.kaloyanyordanov.exchange.book.Symbol;
 import dev.kaloyanyordanov.exchange.book.Trade;
-import dev.kaloyanyordanov.exchange.ledger.AccountLedger;
+import dev.kaloyanyordanov.exchange.ledger.AssetLedger;
+import dev.kaloyanyordanov.exchange.ledger.CashLedger;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -16,27 +18,29 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import org.jctools.queues.MpscArrayQueue;
 
 /**
- * The single-threaded matching core. Many producers offer {@link Command}s to a
- * bounded lock-free MPSC ring buffer; one dedicated matching thread drains it and
- * applies each command to the order book, one at a time, deterministically.
+ * The single-threaded matching core for <b>one pair</b>. Many producers offer
+ * {@link Command}s to a bounded lock-free MPSC ring buffer; one dedicated matching
+ * thread drains it and applies each command to the order book, one at a time,
+ * deterministically.
  *
- * <p><b>The matching thread is the sole owner of the book, the ledger policy, and
- * the sequence counters.</b> No other thread touches them and there is no lock on
- * the book — the single-threaded ownership is the correctness guarantee. The only
- * cross-thread channels are the lock-free ingress queue (in) and the
- * {@link EventPublisher} (out). Because processing is serial, the same command
- * sequence always yields the same book and events.
+ * <p><b>The matching thread is the sole owner of the book, the per-pair asset
+ * ledger, and the sequence counters.</b> No other thread touches them and there is
+ * no lock on the book. Cash is <em>not</em> owned here: it lives in the shared
+ * {@link CashLedger}, and this engine settles the cash leg of each fill by sending
+ * that actor messages (never by shared-memory mutation). The buyer's affordability
+ * was reserved in the cash ledger before the order entered the book, so the matcher
+ * never reads cash cross-thread. Because processing is serial, the same command
+ * sequence always yields the same book, asset state, and events.
  *
  * <p>The book-inspection methods ({@link #snapshot()}, {@link #restingOrders()},
- * {@link #isCrossed()}) touch the book directly and are intended for use only
- * after {@link #stop()} has joined the matching thread.
+ * {@link #isCrossed()}) touch the book directly and are intended for use only after
+ * {@link #stop()} has joined the matching thread.
  */
 public final class MatchingEngine {
 
@@ -45,38 +49,27 @@ public final class MatchingEngine {
   private final OrderBook book;
   private final FillPolicy policy;
   private final EventPublisher publisher;
-  // Optional: when present, the matching thread applies deposits/withdrawals to
-  // it, publishes balance snapshots after settlement, and includes balances in
-  // engine snapshots. Mutated and read only on the matching thread.
-  private final AccountLedger ledger;
+  // The per-pair asset ledger (also the fill policy), read only on the matching
+  // thread; null for an unconstrained (pure-matching) engine.
+  private final AssetLedger assetLedger;
+  // The shared cash owner; the matching thread sends it settle/release messages.
+  // Null for an engine without cash settlement.
+  private final CashLedger cashLedger;
 
-  // Touched only by the matching thread (or by a caller in a single-threaded
-  // test via processCommand); never shared concurrently.
+  // Touched only by the matching thread (or by a caller in a single-threaded test
+  // via processCommand); never shared concurrently.
   private long arrivalSequence;
   private long tradeSequence;
   private long cumulativeCashFromBuyers;
   private long cumulativeCashToSellers;
   private long cumulativeAssetFromSellers;
   private long cumulativeAssetToBuyers;
-  // Running totals of cash deposited and withdrawn via the serial funding path.
-  // Together with the initial cash they define the deposit-aware conservation law.
-  private long cumulativeDeposited;
-  private long cumulativeWithdrawn;
-  // Captured at construction (the ledger is funded before the engine is built).
-  private final long initialTotalCash;
   private final long initialTotalAsset;
 
-  // On-demand snapshot channel: the matching thread publishes here; requesters
-  // poll for a stamp at or beyond their request id.
+  // On-demand snapshot channel: the matching thread publishes here; requesters poll
+  // for a stamp at or beyond their request id.
   private final AtomicReference<StampedSnapshot> latestSnapshot = new AtomicReference<>();
   private final AtomicLong snapshotRequestIds = new AtomicLong();
-
-  // Per-request withdrawal outcome channel: the matching thread records whether a
-  // withdrawal was applied under its request id; the requester polls for it. A map
-  // (not a single reference) so concurrent withdrawal requests never clobber each
-  // other's result.
-  private final ConcurrentHashMap<Long, Boolean> withdrawOutcomes = new ConcurrentHashMap<>();
-  private final AtomicLong withdrawRequestIds = new AtomicLong();
 
   private volatile boolean accepting;
   private Thread worker;
@@ -84,19 +77,19 @@ public final class MatchingEngine {
   private record StampedSnapshot(long requestId, EngineSnapshot snapshot) {}
 
   /**
-   * Creates an engine with unconstrained matching (no ledger).
+   * Creates an engine with unconstrained matching (no ledger, no cash settlement).
    *
    * @param symbol            the traded symbol
    * @param requestedCapacity the ingress capacity (rounded up to a power of two)
    * @param publisher         the outbound event sink
    */
   public MatchingEngine(Symbol symbol, int requestedCapacity, EventPublisher publisher) {
-    this(symbol, requestedCapacity, publisher, FillPolicy.UNCONSTRAINED, null);
+    this(symbol, requestedCapacity, publisher, FillPolicy.UNCONSTRAINED, null, null);
   }
 
   /**
-   * Creates an engine with an explicit fill policy (affordability + settlement)
-   * and no balance publishing.
+   * Creates an engine with an explicit fill policy and no asset view or cash
+   * settlement (used by pure-matching tests).
    *
    * @param symbol            the traded symbol
    * @param requestedCapacity the ingress capacity (rounded up to a power of two)
@@ -105,44 +98,59 @@ public final class MatchingEngine {
    */
   public MatchingEngine(
       Symbol symbol, int requestedCapacity, EventPublisher publisher, FillPolicy policy) {
-    this(symbol, requestedCapacity, publisher, policy, null);
+    this(symbol, requestedCapacity, publisher, policy, null, null);
   }
 
   /**
-   * Creates an engine that also publishes {@link AccountUpdated} balance
-   * snapshots after settlement, read from {@code accountView} on the matching
-   * thread.
+   * Creates a fully-wired pair engine: it caps and settles the asset leg through
+   * {@code assetLedger} (also the fill policy) and settles the cash leg through the
+   * shared {@code cashLedger}, publishing {@link AccountUpdated} asset snapshots
+   * after settlement.
    *
    * @param symbol            the traded symbol
    * @param requestedCapacity the ingress capacity (rounded up to a power of two)
    * @param publisher         the outbound event sink
-   * @param policy            the fill policy applied by the matcher
-   * @param ledger            the ledger mutated and read on the matching thread, or
-   *     {@code null} for an engine without funding or balance publishing
+   * @param assetLedger       the per-pair asset ledger and fill policy
+   * @param cashLedger        the shared cash ledger for cash settlement
    */
   public MatchingEngine(
       Symbol symbol,
       int requestedCapacity,
       EventPublisher publisher,
+      AssetLedger assetLedger,
+      CashLedger cashLedger) {
+    this(
+        symbol,
+        requestedCapacity,
+        publisher,
+        Objects.requireNonNull(assetLedger, "assetLedger"),
+        assetLedger,
+        Objects.requireNonNull(cashLedger, "cashLedger"));
+  }
+
+  private MatchingEngine(
+      Symbol symbol,
+      int requestedCapacity,
+      EventPublisher publisher,
       FillPolicy policy,
-      AccountLedger ledger) {
+      AssetLedger assetLedger,
+      CashLedger cashLedger) {
     Objects.requireNonNull(symbol, "symbol");
     if (requestedCapacity <= 0) {
       throw new IllegalArgumentException("capacity must be positive: " + requestedCapacity);
     }
     this.publisher = Objects.requireNonNull(publisher, "publisher");
     this.policy = Objects.requireNonNull(policy, "policy");
-    this.ledger = ledger;
+    this.assetLedger = assetLedger;
+    this.cashLedger = cashLedger;
     this.ingress = new MpscArrayQueue<>(requestedCapacity);
     this.capacity = ingress.capacity();
     this.book = new OrderBook(symbol);
-    this.initialTotalCash = ledger != null ? ledger.totalCash() : 0L;
-    this.initialTotalAsset = ledger != null ? ledger.totalAsset() : 0L;
+    this.initialTotalAsset = assetLedger != null ? assetLedger.totalAsset() : 0L;
   }
 
   /**
-   * The actual ingress capacity (the requested value rounded up to a power of
-   * two). At most this many commands can be queued before back-pressure.
+   * The actual ingress capacity (the requested value rounded up to a power of two).
    *
    * @return the ingress capacity
    */
@@ -192,8 +200,6 @@ public final class MatchingEngine {
   }
 
   private void runLoop() {
-    // Drain-and-stop: keep going while accepting, and once stopping keep going
-    // until the queue is fully drained, so no enqueued command is lost.
     while (accepting || !ingress.isEmpty()) {
       Command command = ingress.poll();
       if (command == null) {
@@ -215,16 +221,17 @@ public final class MatchingEngine {
     switch (command) {
       case SubmitOrder submit -> handleSubmit(submit);
       case SnapshotRequest request -> handleSnapshot(request);
-      case DepositCash deposit -> handleDeposit(deposit);
-      case WithdrawCash withdraw -> handleWithdraw(withdraw);
     }
   }
 
   @SuppressFBWarnings(
-      value = "AT_NONATOMIC_OPERATIONS_ON_SHARED_VARIABLE",
+      value = {"AT_NONATOMIC_OPERATIONS_ON_SHARED_VARIABLE", "AT_UNSAFE_RESOURCE_ACCESS_IN_THREAD"},
       justification =
-          "cumulative trade counters are read and written only on the single matching thread;"
-              + " the non-atomic += is safe and never contended")
+          "cumulative trade counters are read and written only on the single matching thread"
+              + " (the non-atomic += is safe and never contended); the cashLedger calls are"
+              + " lock-free message sends to a thread-safe single-owner actor (its own thread"
+              + " applies them serially), the intended cross-thread settlement design, not an"
+              + " unsafe shared-memory access")
   private void handleSubmit(SubmitOrder submit) {
     Order order =
         Order.create(
@@ -245,6 +252,8 @@ public final class MatchingEngine {
 
     List<Trade> trades = Matcher.match(book, order, policy, tradeSequence);
     tradeSequence += trades.size();
+    long filledQuantity = 0L;
+    long filledCost = 0L;
     for (Trade trade : trades) {
       publisher.publish(new TradeExecuted(trade));
       long notional = trade.notional();
@@ -252,58 +261,51 @@ public final class MatchingEngine {
       cumulativeCashToSellers += notional;
       cumulativeAssetFromSellers += trade.quantity();
       cumulativeAssetToBuyers += trade.quantity();
+      filledQuantity += trade.quantity();
+      filledCost += notional;
+      // Settle the cash leg on the shared cash owner: the buyer's reserved cash
+      // moves to the seller's available cash. The asset leg was already settled by
+      // the fill policy (the asset ledger) during matching.
+      if (cashLedger != null) {
+        cashLedger.settle(trade.buyerAccountId(), trade.sellerAccountId(), notional);
+      }
     }
+    releaseBuyerPriceImprovement(order, filledQuantity, filledCost);
     publishAffectedBalances(trades);
     publisher.publish(new BookChanged(book.snapshot()));
+  }
+
+  /**
+   * An aggressor buy reserved its limit cost but may fill cheaper against resting
+   * asks; the price-improvement savings on the filled quantity are released back to
+   * the buyer's available cash. Resting buys always fill at their own price, so
+   * their savings are zero and their reservation is consumed exactly.
+   */
+  @SuppressFBWarnings(
+      value = "AT_UNSAFE_RESOURCE_ACCESS_IN_THREAD",
+      justification =
+          "cashLedger.release is a lock-free message send to a thread-safe single-owner actor,"
+              + " the intended cross-thread settlement design, not an unsafe shared-memory access")
+  private void releaseBuyerPriceImprovement(Order order, long filledQuantity, long filledCost) {
+    if (cashLedger == null || order.side() != Side.BUY || filledQuantity == 0L) {
+      return;
+    }
+    long reservedForFilled = Math.multiplyExact(order.price(), filledQuantity);
+    long savings = reservedForFilled - filledCost;
+    if (savings > 0L) {
+      cashLedger.release(order.accountId(), savings);
+    }
   }
 
   private void handleSnapshot(SnapshotRequest request) {
     latestSnapshot.set(new StampedSnapshot(request.requestId(), buildSnapshot()));
   }
 
-  @SuppressFBWarnings(
-      value = "AT_NONATOMIC_OPERATIONS_ON_SHARED_VARIABLE",
-      justification =
-          "cumulativeDeposited is read and written only on the single matching thread;"
-              + " the non-atomic += is safe and never contended")
-  private void handleDeposit(DepositCash deposit) {
-    ledger.creditCash(deposit.accountId(), deposit.amount());
-    cumulativeDeposited += deposit.amount();
-    long newBalance = ledger.cashOf(deposit.accountId());
-    publisher.publish(
-        new CashDeposited(
-            deposit.accountId(), deposit.amount(), newBalance, deposit.providerReference()));
-    publisher.publish(
-        new AccountUpdated(
-            deposit.accountId(), newBalance, ledger.assetOf(deposit.accountId())));
-  }
-
-  @SuppressFBWarnings(
-      value = "AT_NONATOMIC_OPERATIONS_ON_SHARED_VARIABLE",
-      justification =
-          "cumulativeWithdrawn is read and written only on the single matching thread;"
-              + " the non-atomic += is safe and never contended")
-  private void handleWithdraw(WithdrawCash withdraw) {
-    boolean applied = ledger.withdrawCash(withdraw.accountId(), withdraw.amount());
-    if (applied) {
-      cumulativeWithdrawn += withdraw.amount();
-      long newBalance = ledger.cashOf(withdraw.accountId());
-      publisher.publish(
-          new CashWithdrawn(
-              withdraw.accountId(), withdraw.amount(), newBalance, withdraw.providerReference()));
-      publisher.publish(
-          new AccountUpdated(
-              withdraw.accountId(), newBalance, ledger.assetOf(withdraw.accountId())));
-    }
-    withdrawOutcomes.put(withdraw.requestId(), applied);
-  }
-
   private EngineSnapshot buildSnapshot() {
     List<AccountBalance> accounts = new ArrayList<>();
-    if (ledger != null) {
-      for (long accountId : ledger.accountIds()) {
-        accounts.add(
-            new AccountBalance(accountId, ledger.cashOf(accountId), ledger.assetOf(accountId)));
+    if (assetLedger != null) {
+      for (long accountId : assetLedger.accountIds()) {
+        accounts.add(new AccountBalance(accountId, assetLedger.assetOf(accountId)));
       }
     }
     List<RestingOrder> resting = new ArrayList<>();
@@ -321,10 +323,7 @@ public final class MatchingEngine {
         book.snapshot(),
         resting,
         accounts,
-        initialTotalCash,
         initialTotalAsset,
-        cumulativeDeposited,
-        cumulativeWithdrawn,
         cumulativeCashFromBuyers,
         cumulativeCashToSellers,
         cumulativeAssetFromSellers,
@@ -332,12 +331,12 @@ public final class MatchingEngine {
   }
 
   /**
-   * Requests a consistent snapshot of engine and ledger state, produced on the
-   * matching thread. Never touches the live book or ledger from the caller.
+   * Requests a consistent snapshot of engine state, produced on the matching
+   * thread. Never touches the live book or ledger from the caller.
    *
    * @param timeout how long to wait for the snapshot
-   * @return the snapshot, or empty if the request was rejected (busy/stopped) or
-   *     did not complete within the timeout
+   * @return the snapshot, or empty if the request was rejected (busy/stopped) or did
+   *     not complete within the timeout
    */
   public Optional<EngineSnapshot> requestSnapshot(Duration timeout) {
     long requestId = snapshotRequestIds.incrementAndGet();
@@ -356,62 +355,13 @@ public final class MatchingEngine {
   }
 
   /**
-   * Enqueues a deposit to be applied on the matching thread. The credit is a
-   * serial, audited operation there (like a fill); this method only offers the
-   * command and returns whether it was accepted into the ingress.
-   *
-   * @param accountId         the account to credit
-   * @param amount            the amount in scaled integer quote units; must be positive
-   * @param providerReference the payment provider's reference for the deposit
-   * @return {@link SubmitResult#ENQUEUED} on success, or a rejection if the queue
-   *     is full or the engine is not accepting commands
-   */
-  public SubmitResult deposit(long accountId, long amount, String providerReference) {
-    return submit(new DepositCash(accountId, amount, providerReference));
-  }
-
-  /**
-   * Requests a withdrawal and waits for its outcome. The sufficient-funds check
-   * and debit happen atomically on the matching thread, so committed funds can
-   * never be over-drawn and the balance can never go negative.
-   *
-   * @param accountId         the account to debit
-   * @param amount            the amount in scaled integer quote units; must be positive
-   * @param providerReference the reference recorded for the withdrawal
-   * @param timeout           how long to wait for the matching thread's outcome
-   * @return {@link WithdrawalOutcome#APPLIED} if debited,
-   *     {@link WithdrawalOutcome#INSUFFICIENT_FUNDS} if the account lacked the
-   *     cash, or {@link WithdrawalOutcome#UNAVAILABLE} if the request was rejected
-   *     (busy/stopped) or did not complete within the timeout
-   */
-  public WithdrawalOutcome withdraw(
-      long accountId, long amount, String providerReference, Duration timeout) {
-    long requestId = withdrawRequestIds.incrementAndGet();
-    if (submit(new WithdrawCash(requestId, accountId, amount, providerReference))
-        != SubmitResult.ENQUEUED) {
-      return WithdrawalOutcome.UNAVAILABLE;
-    }
-    long deadline = System.nanoTime() + timeout.toNanos();
-    while (System.nanoTime() < deadline) {
-      Boolean applied = withdrawOutcomes.remove(requestId);
-      if (applied != null) {
-        return applied ? WithdrawalOutcome.APPLIED : WithdrawalOutcome.INSUFFICIENT_FUNDS;
-      }
-      LockSupport.parkNanos(100_000L);
-    }
-    // Give up waiting, but leave no stale entry if the matching thread lands late.
-    withdrawOutcomes.remove(requestId);
-    return WithdrawalOutcome.UNAVAILABLE;
-  }
-
-  /**
-   * Publishes a balance snapshot for each distinct account that appeared in the
-   * fills, read from the account view on the matching thread. Pure egress: it
-   * does not affect matching or determinism, and is skipped when no account view
-   * is configured.
+   * Publishes an asset snapshot for each distinct account that appeared in the
+   * fills, read from the asset ledger on the matching thread. Pure egress: it does
+   * not affect matching or determinism, and is skipped when no asset ledger is
+   * configured.
    */
   private void publishAffectedBalances(List<Trade> trades) {
-    if (ledger == null || trades.isEmpty()) {
+    if (assetLedger == null || trades.isEmpty()) {
       return;
     }
     Set<Long> affected = new LinkedHashSet<>();
@@ -420,8 +370,7 @@ public final class MatchingEngine {
       affected.add(trade.sellerAccountId());
     }
     for (long accountId : affected) {
-      publisher.publish(
-          new AccountUpdated(accountId, ledger.cashOf(accountId), ledger.assetOf(accountId)));
+      publisher.publish(new AccountUpdated(accountId, assetLedger.assetOf(accountId)));
     }
   }
 

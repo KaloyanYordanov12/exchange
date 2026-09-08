@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SOL/USD, XRP/USD, DOGE/USD — as the default catalog, spanning five orders of price
   magnitude (BTC ~10^10 down to DOGE ~10^4 micro-USD). Scaled-integer price and
   notional math is proven exact at both the BTC and DOGE magnitudes.
+- **Phase M1 — multi-pair backend (in progress).** Engine cash boundary: the
+  matching engine no longer owns cash. It settles the asset leg through its per-pair
+  `AssetLedger` and the cash leg through the shared `CashLedger` (a message send per
+  fill; price-improvement savings released), and a buy's cash is reserved before the
+  order enters the book. Balances split into per-pair asset (engine snapshot /
+  `AccountUpdated`, now asset-only) and shared cash (cash-ledger snapshot). Invariants
+  split accordingly: `InvariantChecker` verifies the six per-pair invariants, and a
+  new `CashInvariantChecker` verifies cross-account cash conservation and
+  no-negative-cash over the whole cash ledger; `InvariantMonitor` runs both.
+  Deposits/withdrawals now flow through the `CashLedger` (audited off the hot path by
+  a `CashAuditWorker`); order/trade persistence is unchanged.
 - **Phase M1 — multi-pair backend (in progress).** Per-pair `AssetLedger`: an
   asset-only ledger + fill policy owned by one engine's matching thread. The seller
   is capped to the asset it holds (no negative asset); the buyer is unconstrained

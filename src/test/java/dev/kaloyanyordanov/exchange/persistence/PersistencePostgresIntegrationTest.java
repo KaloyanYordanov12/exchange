@@ -3,10 +3,9 @@ package dev.kaloyanyordanov.exchange.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import dev.kaloyanyordanov.exchange.book.OrderId;
+import dev.kaloyanyordanov.exchange.api.ExchangeService;
+import dev.kaloyanyordanov.exchange.api.PlacementOutcome;
 import dev.kaloyanyordanov.exchange.book.Side;
-import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
-import dev.kaloyanyordanov.exchange.engine.SubmitOrder;
 import dev.kaloyanyordanov.exchange.payment.FundingStatus;
 import dev.kaloyanyordanov.exchange.payment.PaymentService;
 import java.time.Duration;
@@ -25,9 +24,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
- * Verifies the async worker durably records orders, trades, and account snapshots
- * to a real Postgres (via Flyway-managed schema). Excluded from PIT (slow full
- * context + container); the fast mapping unit tests carry mutation coverage.
+ * Verifies the async workers durably record orders and trades (the persistence
+ * worker) and cash movements (the cash audit worker) to a real Postgres via the
+ * Flyway-managed schema. Excluded from PIT (slow full context + container); the fast
+ * mapping unit tests carry mutation coverage.
  */
 @SpringBootTest
 @ActiveProfiles("persistence")
@@ -45,45 +45,36 @@ class PersistencePostgresIntegrationTest {
     registry.add("spring.datasource.password", POSTGRES::getPassword);
   }
 
-  @Autowired private MatchingEngine engine;
+  @Autowired private ExchangeService exchangeService;
   @Autowired private PaymentService paymentService;
   @Autowired private OrderRepository orderRepository;
   @Autowired private TradeRepository tradeRepository;
-  @Autowired private AccountRepository accountRepository;
   @Autowired private LedgerTransactionRepository ledgerTransactionRepository;
 
   @Test
   @Order(1)
-  void persistsOrdersTradesAndAccountSnapshots() {
-    // Bob (account 2) sells; Alice (account 1) buys and crosses.
-    engine.submit(new SubmitOrder(OrderId.of(1L), Side.SELL, 100L, 10L, 2L));
-    engine.submit(new SubmitOrder(OrderId.of(2L), Side.BUY, 100L, 10L, 1L));
+  void persistsOrdersAndTrades() {
+    // Bob (account 2) sells; Alice (account 1) reserves and buys, crossing.
+    assertThat(exchangeService.place(2L, Side.SELL, 100L, 10L).status())
+        .isEqualTo(PlacementOutcome.Status.ACCEPTED);
+    assertThat(exchangeService.place(1L, Side.BUY, 100L, 10L).status())
+        .isEqualTo(PlacementOutcome.Status.ACCEPTED);
 
     await()
         .atMost(Duration.ofSeconds(15))
         .untilAsserted(() -> assertThat(tradeRepository.count()).isEqualTo(1L));
 
     assertThat(orderRepository.count()).isEqualTo(2L);
-    assertThat(accountRepository.count()).isEqualTo(2L);
-
     TradeEntity trade = tradeRepository.findAll().get(0);
     assertThat(trade.getPrice()).isEqualTo(100L);
     assertThat(trade.getQuantity()).isEqualTo(10L);
-    assertThat(trade.getBuyOrderId()).isEqualTo(2L);
-    assertThat(trade.getSellOrderId()).isEqualTo(1L);
-
-    // Buyer settled: cash 100_000_000 - 1_000, asset 1_000 + 10.
-    AccountEntity buyer = accountRepository.findById(1L).orElseThrow();
-    assertThat(buyer.getCash()).isEqualTo(99_999_000L);
-    assertThat(buyer.getAsset()).isEqualTo(1_010L);
   }
 
   @Test
   @Order(2)
-  void persistsDepositsAndWithdrawalsToTheLedgerLog() {
-    // A dedicated account (3, not a configured genesis account) so the movements
-    // are isolated from the genesis funding and the trade test; the deposit funds
-    // the withdrawal.
+  void auditsDepositsAndWithdrawalsToTheLedgerLog() {
+    // A dedicated account (3, not a configured genesis account) isolates these
+    // movements from the genesis funding; the deposit funds the withdrawal.
     assertThat(paymentService.deposit(3L, 5_000L).status()).isEqualTo(FundingStatus.ACCEPTED);
     assertThat(paymentService.withdraw(3L, 2_000L).status()).isEqualTo(FundingStatus.APPLIED);
 

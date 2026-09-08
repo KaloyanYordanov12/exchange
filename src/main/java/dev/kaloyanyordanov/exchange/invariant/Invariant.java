@@ -1,12 +1,18 @@
 package dev.kaloyanyordanov.exchange.invariant;
 
-/** The seven correctness invariants verified against an engine snapshot. */
+/**
+ * The correctness invariants. Six are per-pair, checked against an engine snapshot
+ * by {@link InvariantChecker}: asset conservation, no negative balances, no
+ * overfill, price-time priority, book not crossed, trades balance. Cash conservation
+ * is cross-account (cash is shared across pairs) and checked over the whole cash
+ * ledger by {@link CashInvariantChecker}, alongside no-negative-cash.
+ */
 public enum Invariant {
-  /** Total cash across all accounts equals the initial total. */
+  /** Total cash (available + reserved) across all accounts equals deposited minus withdrawn. */
   CASH_CONSERVATION,
-  /** Total asset across all accounts equals the initial total. */
+  /** Total asset across all accounts in a pair equals the initial total. */
   ASSET_CONSERVATION,
-  /** No account's cash or asset is negative. */
+  /** No account's asset (per pair) or cash (available/reserved) is negative. */
   NO_NEGATIVE_BALANCES,
   /** No resting order is overfilled (0 &lt; remaining &lt;= quantity). */
   NO_OVERFILL,

@@ -16,7 +16,6 @@ import dev.kaloyanyordanov.exchange.ledger.Account;
 import dev.kaloyanyordanov.exchange.payment.FundingResult;
 import dev.kaloyanyordanov.exchange.payment.FundingStatus;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -108,7 +107,7 @@ class ExchangeControllerTest {
 
   @Test
   void meReturnsKnownBalance() throws Exception {
-    when(service.balance(1L)).thenReturn(Optional.of(new Account(1L, 900L, 12L)));
+    when(service.balance(1L)).thenReturn(new Account(1L, 900L, 12L));
 
     mockMvc
         .perform(get("/accounts/me").requestAttr(ApiKeyAuthFilter.ACCOUNT_ATTRIBUTE, 1L))
@@ -120,7 +119,7 @@ class ExchangeControllerTest {
 
   @Test
   void meReturnsZeroesWhenBalanceUnknown() throws Exception {
-    when(service.balance(7L)).thenReturn(Optional.empty());
+    when(service.balance(7L)).thenReturn(new Account(7L, 0L, 0L));
 
     mockMvc
         .perform(get("/accounts/me").requestAttr(ApiKeyAuthFilter.ACCOUNT_ATTRIBUTE, 7L))

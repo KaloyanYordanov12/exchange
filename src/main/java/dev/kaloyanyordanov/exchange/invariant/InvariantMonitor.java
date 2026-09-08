@@ -2,7 +2,12 @@ package dev.kaloyanyordanov.exchange.invariant;
 
 import dev.kaloyanyordanov.exchange.engine.EngineSnapshot;
 import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
+import dev.kaloyanyordanov.exchange.ledger.CashLedger;
+import dev.kaloyanyordanov.exchange.ledger.CashSnapshot;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -10,15 +15,17 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Verifies the seven invariants against the live engine — on demand and
- * continuously. It obtains a consistent snapshot through the engine's real ingress
- * (never touching the core, §4.4) and runs the pure {@link InvariantChecker}. A
- * lightweight periodic check keeps a latest verdict for the public panel to read
- * cheaply; a snapshot build once per interval does not affect matching.
+ * Verifies the invariants against the live system - on demand and continuously. It
+ * obtains consistent snapshots through the engine's and cash ledger's real ingress
+ * queues (never touching a core, section 4.4) and runs the pure checkers: the six
+ * per-pair invariants via {@link InvariantChecker} and the two cross-account cash
+ * invariants via {@link CashInvariantChecker}. A lightweight periodic check keeps a
+ * latest verdict for the public panel to read cheaply.
  */
 public final class InvariantMonitor {
 
   private final MatchingEngine engine;
+  private final CashLedger cashLedger;
   private final Duration snapshotTimeout;
   private final long checkIntervalMillis;
   private final AtomicReference<InvariantReport> latest =
@@ -29,11 +36,20 @@ public final class InvariantMonitor {
    * Creates the monitor.
    *
    * @param engine                the matching engine
+   * @param cashLedger            the shared cash ledger
    * @param checkIntervalMillis   the continuous check interval in milliseconds
    * @param snapshotTimeoutMillis how long to wait for each snapshot
    */
+  @SuppressFBWarnings(
+      value = "EI_EXPOSE_REP2",
+      justification =
+          "the engine and cash ledger are shared singleton services; the monitor reads their"
+              + " snapshots through their real ingress and stores the shared references by design")
   public InvariantMonitor(
-      MatchingEngine engine, long checkIntervalMillis, long snapshotTimeoutMillis) {
+      MatchingEngine engine,
+      CashLedger cashLedger,
+      long checkIntervalMillis,
+      long snapshotTimeoutMillis) {
     if (checkIntervalMillis <= 0) {
       throw new IllegalArgumentException("check interval must be positive");
     }
@@ -41,6 +57,7 @@ public final class InvariantMonitor {
       throw new IllegalArgumentException("snapshot timeout must be positive");
     }
     this.engine = engine;
+    this.cashLedger = cashLedger;
     this.checkIntervalMillis = checkIntervalMillis;
     this.snapshotTimeout = Duration.ofMillis(snapshotTimeoutMillis);
   }
@@ -48,14 +65,20 @@ public final class InvariantMonitor {
   /**
    * Runs a fresh check now, updating the latest verdict.
    *
-   * @return the report (unavailable if no snapshot could be obtained)
+   * @return the report (unavailable if any snapshot could not be obtained)
    */
   public InvariantReport checkNow() {
-    Optional<EngineSnapshot> snapshot = engine.requestSnapshot(snapshotTimeout);
-    InvariantReport report =
-        snapshot
-            .map(state -> InvariantReport.of(InvariantChecker.check(state)))
-            .orElseGet(InvariantReport::unavailable);
+    Optional<EngineSnapshot> engineSnapshot = engine.requestSnapshot(snapshotTimeout);
+    Optional<CashSnapshot> cashSnapshot = cashLedger.snapshot(snapshotTimeout);
+    if (engineSnapshot.isEmpty() || cashSnapshot.isEmpty()) {
+      InvariantReport unavailable = InvariantReport.unavailable();
+      latest.set(unavailable);
+      return unavailable;
+    }
+    List<InvariantResult> results = new ArrayList<>();
+    results.addAll(InvariantChecker.check(engineSnapshot.get()).results());
+    results.addAll(CashInvariantChecker.check(cashSnapshot.get()).results());
+    InvariantReport report = InvariantReport.of(CheckReport.of(results));
     latest.set(report);
     return report;
   }

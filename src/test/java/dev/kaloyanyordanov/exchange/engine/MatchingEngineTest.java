@@ -8,7 +8,10 @@ import dev.kaloyanyordanov.exchange.book.OrderId;
 import dev.kaloyanyordanov.exchange.book.Side;
 import dev.kaloyanyordanov.exchange.book.Symbol;
 import dev.kaloyanyordanov.exchange.book.Trade;
-import dev.kaloyanyordanov.exchange.ledger.Ledger;
+import dev.kaloyanyordanov.exchange.ledger.AssetLedger;
+import dev.kaloyanyordanov.exchange.ledger.CashLedger;
+import dev.kaloyanyordanov.exchange.ledger.ReservationOutcome;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 class MatchingEngineTest {
@@ -127,21 +130,28 @@ class MatchingEngineTest {
   }
 
   @Test
-  void emitsAccountUpdatesForAffectedAccountsWhenLedgerBacked() {
-    RecordingEventPublisher publisher = new RecordingEventPublisher();
-    Ledger ledger = new Ledger();
-    ledger.deposit(10L, 10_000L, 0L);
-    ledger.deposit(20L, 0L, 100L);
-    MatchingEngine engine =
-        new MatchingEngine(SYMBOL, 1024, publisher, ledger, ledger);
+  void emitsAssetAccountUpdatesForAffectedAccountsWhenLedgerBacked()
+      throws InterruptedException {
+    CashLedger cash = new CashLedger(1024);
+    cash.start();
+    try {
+      final RecordingEventPublisher publisher = new RecordingEventPublisher();
+      AssetLedger asset = new AssetLedger();
+      asset.endow(20L, 100L);
+      cash.deposit(10L, 10_000L, "seed");
+      assertThat(cash.reserve(10L, 500L, Duration.ofSeconds(2)))
+          .isEqualTo(ReservationOutcome.RESERVED);
+      MatchingEngine engine = new MatchingEngine(SYMBOL, 1024, publisher, asset, cash);
 
-    engine.processCommand(new SubmitOrder(OrderId.of(1L), Side.SELL, 100L, 5L, 20L));
-    engine.processCommand(new SubmitOrder(OrderId.of(2L), Side.BUY, 100L, 5L, 10L));
+      engine.processCommand(new SubmitOrder(OrderId.of(1L), Side.SELL, 100L, 5L, 20L));
+      engine.processCommand(new SubmitOrder(OrderId.of(2L), Side.BUY, 100L, 5L, 10L));
 
-    // One AccountUpdated per distinct affected account, with settled balances.
-    assertThat(publisher.accountUpdates())
-        .containsExactlyInAnyOrder(
-            new AccountUpdated(10L, 9_500L, 5L), new AccountUpdated(20L, 500L, 95L));
+      // One AccountUpdated per distinct affected account, with settled per-pair asset.
+      assertThat(publisher.accountUpdates())
+          .containsExactlyInAnyOrder(new AccountUpdated(10L, 5L), new AccountUpdated(20L, 95L));
+    } finally {
+      cash.stop();
+    }
   }
 
   @Test

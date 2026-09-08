@@ -1,11 +1,16 @@
 package dev.kaloyanyordanov.exchange.sim;
 
 import dev.kaloyanyordanov.exchange.book.OrderId;
+import dev.kaloyanyordanov.exchange.book.Side;
 import dev.kaloyanyordanov.exchange.book.Symbol;
 import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
 import dev.kaloyanyordanov.exchange.engine.SubmitOrder;
 import dev.kaloyanyordanov.exchange.engine.SubmitResult;
+import dev.kaloyanyordanov.exchange.ledger.CashLedger;
+import dev.kaloyanyordanov.exchange.ledger.ReservationOutcome;
 import dev.kaloyanyordanov.exchange.sim.OrderGenerator.GeneratedOrder;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.time.Duration;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -24,9 +29,11 @@ public final class LoadSimulator {
 
   // Simulator order ids live in a high range to avoid colliding with API ids.
   private static final long ORDER_ID_BASE = 1_000_000_000L;
+  private static final Duration RESERVE_TIMEOUT = Duration.ofSeconds(1);
 
   private final MatchingEngine engine;
   private final Symbol symbol;
+  private final CashLedger cashLedger;
   private final SimulatorMetricsSink sink;
   private final AtomicLong orderIds = new AtomicLong(ORDER_ID_BASE);
   private final Object lifecycle = new Object();
@@ -38,13 +45,21 @@ public final class LoadSimulator {
   /**
    * Creates the simulator.
    *
-   * @param engine the matching engine to drive through its real ingress
-   * @param symbol the traded symbol (tick/lot for order generation)
-   * @param sink   the metrics sink that records processed events
+   * @param engine     the matching engine to drive through its real ingress
+   * @param symbol     the traded symbol (tick/lot for order generation)
+   * @param cashLedger the shared cash ledger, for reserving a buy's cash like the API
+   * @param sink       the metrics sink that records processed events
    */
-  public LoadSimulator(MatchingEngine engine, Symbol symbol, SimulatorMetricsSink sink) {
+  @SuppressFBWarnings(
+      value = "EI_EXPOSE_REP2",
+      justification =
+          "the engine and cash ledger are shared singleton services the simulator drives through"
+              + " their real ingress; storing the shared references is the intended design")
+  public LoadSimulator(
+      MatchingEngine engine, Symbol symbol, CashLedger cashLedger, SimulatorMetricsSink sink) {
     this.engine = engine;
     this.symbol = symbol;
+    this.cashLedger = cashLedger;
     this.sink = sink;
   }
 
@@ -109,6 +124,16 @@ public final class LoadSimulator {
         j++) {
       GeneratedOrder order = generator.next();
       long id = orderIds.getAndIncrement();
+      // A buy must reserve its cash first, exactly like the API gateway does, so an
+      // unfunded buy is rejected rather than driving the account's cash negative.
+      long reserved = 0L;
+      if (order.side() == Side.BUY) {
+        reserved = Math.multiplyExact(order.price(), order.quantity());
+        if (cashLedger.reserve(account, reserved, RESERVE_TIMEOUT) != ReservationOutcome.RESERVED) {
+          runMetrics.countRejected();
+          continue;
+        }
+      }
       runMetrics.markSubmit(id, System.nanoTime());
       SubmitResult result =
           engine.submit(
@@ -117,6 +142,9 @@ public final class LoadSimulator {
       if (result == SubmitResult.ENQUEUED) {
         runMetrics.countSubmitted();
       } else {
+        if (order.side() == Side.BUY) {
+          cashLedger.release(account, reserved);
+        }
         runMetrics.countRejected();
         runMetrics.unmark(id);
       }

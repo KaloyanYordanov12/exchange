@@ -8,7 +8,8 @@ import dev.kaloyanyordanov.exchange.book.Symbol;
 import dev.kaloyanyordanov.exchange.engine.EngineEvent;
 import dev.kaloyanyordanov.exchange.engine.EventPublisher;
 import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
-import dev.kaloyanyordanov.exchange.ledger.Ledger;
+import dev.kaloyanyordanov.exchange.ledger.AssetLedger;
+import dev.kaloyanyordanov.exchange.ledger.CashLedger;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -18,11 +19,19 @@ class LoadSimulatorTest {
 
   private static final Symbol SYMBOL = new Symbol("BTC", "USD", 1L, 1L);
 
-  private static Ledger fundedLedger() {
-    Ledger ledger = new Ledger();
-    ledger.deposit(1L, 1_000_000_000L, 1_000_000L);
-    ledger.deposit(2L, 1_000_000_000L, 1_000_000L);
-    return ledger;
+  /** A started cash ledger plus an asset-backed engine over accounts 1 and 2. */
+  private record Setup(MatchingEngine engine, CashLedger cash) {}
+
+  private static Setup setup(int engineCapacity, EventPublisher publisher) {
+    CashLedger cash = new CashLedger(1 << 16);
+    cash.start();
+    AssetLedger asset = new AssetLedger();
+    asset.endow(1L, 1_000_000L);
+    asset.endow(2L, 1_000_000L);
+    cash.deposit(1L, 1_000_000_000L, "seed");
+    cash.deposit(2L, 1_000_000_000L, "seed");
+    MatchingEngine engine = new MatchingEngine(SYMBOL, engineCapacity, publisher, asset, cash);
+    return new Setup(engine, cash);
   }
 
   private static SimulatorConfig config(int traders, int perTrader) {
@@ -32,17 +41,17 @@ class LoadSimulatorTest {
 
   @Test
   void drivesTheRealEngineAndMeasuresRealMetrics() throws InterruptedException {
-    Ledger ledger = fundedLedger();
     SimulatorMetricsSink sink = new SimulatorMetricsSink();
-    MatchingEngine engine = new MatchingEngine(SYMBOL, 1 << 16, sink, ledger, ledger);
-    engine.start();
-    LoadSimulator simulator = new LoadSimulator(engine, SYMBOL, sink);
+    Setup setup = setup(1 << 16, sink);
+    setup.engine().start();
+    LoadSimulator simulator = new LoadSimulator(setup.engine(), SYMBOL, setup.cash(), sink);
 
     simulator.start(config(4, 25)); // 100 orders total
 
     await().atMost(Duration.ofSeconds(20)).until(() -> !simulator.isRunning());
     await().atMost(Duration.ofSeconds(20)).until(() -> simulator.metrics().accepted() == 100L);
-    engine.stop();
+    setup.engine().stop();
+    setup.cash().stop();
 
     MetricsSnapshot metrics = simulator.metrics();
     assertThat(metrics.submitted()).isEqualTo(100L);
@@ -54,12 +63,11 @@ class LoadSimulatorTest {
   }
 
   @Test
-  void rejectsSecondRunWhileOneIsActive() {
-    Ledger ledger = fundedLedger();
+  void rejectsSecondRunWhileOneIsActive() throws InterruptedException {
     SimulatorMetricsSink sink = new SimulatorMetricsSink();
-    MatchingEngine engine = new MatchingEngine(SYMBOL, 1 << 16, sink, ledger, ledger);
-    engine.start();
-    LoadSimulator simulator = new LoadSimulator(engine, SYMBOL, sink);
+    Setup setup = setup(1 << 16, sink);
+    setup.engine().start();
+    LoadSimulator simulator = new LoadSimulator(setup.engine(), SYMBOL, setup.cash(), sink);
 
     // A long-paced run stays active while we try to start another.
     simulator.start(
@@ -70,6 +78,8 @@ class LoadSimulatorTest {
           .isInstanceOf(IllegalStateException.class);
     } finally {
       simulator.stop();
+      setup.engine().stop();
+      setup.cash().stop();
     }
   }
 
@@ -85,12 +95,11 @@ class LoadSimulatorTest {
             Thread.currentThread().interrupt();
           }
         };
-    Ledger ledger = fundedLedger();
-    MatchingEngine engine = new MatchingEngine(SYMBOL, 8, blocking, ledger, ledger);
-    engine.start();
+    Setup setup = setup(8, blocking);
+    setup.engine().start();
 
     SimulatorMetricsSink sink = new SimulatorMetricsSink();
-    LoadSimulator simulator = new LoadSimulator(engine, SYMBOL, sink);
+    LoadSimulator simulator = new LoadSimulator(setup.engine(), SYMBOL, setup.cash(), sink);
     simulator.start(config(1, 500)); // one trader floods a queue of capacity 8
 
     await().atMost(Duration.ofSeconds(20)).until(() -> !simulator.isRunning());
@@ -102,6 +111,7 @@ class LoadSimulatorTest {
     assertThat(metrics.submitted()).isLessThanOrEqualTo(9L); // capacity 8 (+1 in flight)
 
     gate.countDown();
-    engine.stop();
+    setup.engine().stop();
+    setup.cash().stop();
   }
 }

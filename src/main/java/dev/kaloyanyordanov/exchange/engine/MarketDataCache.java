@@ -1,17 +1,18 @@
 package dev.kaloyanyordanov.exchange.engine;
 
 import dev.kaloyanyordanov.exchange.book.BookSnapshot;
-import dev.kaloyanyordanov.exchange.ledger.Account;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * A read model for the API, kept current from the engine's event stream. It holds
- * the latest immutable {@link BookSnapshot} and per-account balances so HTTP
- * threads can read market data <em>without ever touching the order book or ledger
- * off the matching thread</em> — the §4.4 guarantee for reads.
+ * A per-pair read model for the API, kept current from one engine's event stream.
+ * It holds the latest immutable {@link BookSnapshot} and per-account <b>asset</b>
+ * holdings for this pair, so HTTP threads can read market data <em>without ever
+ * touching the order book or ledger off the matching thread</em> (the §4.4 guarantee
+ * for reads). Cash is not held here: it is shared across pairs and read from the
+ * cash ledger; a balance response combines this pair's asset with that shared cash.
  *
  * <p>Updates are applied synchronously in {@link #publish(EngineEvent)} using only
  * lock-free atomics ({@link AtomicReference}, {@link ConcurrentHashMap}), so the
@@ -21,16 +22,13 @@ public final class MarketDataCache implements EventPublisher {
 
   private final AtomicReference<BookSnapshot> latestBook =
       new AtomicReference<>(new BookSnapshot(List.of(), List.of()));
-  private final ConcurrentHashMap<Long, Account> balances = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<Long, Long> assets = new ConcurrentHashMap<>();
 
   @Override
   public void publish(EngineEvent event) {
     switch (event) {
       case BookChanged bookChanged -> latestBook.set(bookChanged.snapshot());
-      case AccountUpdated updated ->
-          balances.put(
-              updated.accountId(),
-              new Account(updated.accountId(), updated.cash(), updated.asset()));
+      case AccountUpdated updated -> assets.put(updated.accountId(), updated.asset());
       case OrderAccepted ignored -> {
         // Not part of the read model.
       }
@@ -40,25 +38,18 @@ public final class MarketDataCache implements EventPublisher {
       case TradeExecuted ignored -> {
         // The trade tape is the broadcaster's concern.
       }
-      case CashDeposited ignored -> {
-        // The resulting balance arrives as an AccountUpdated event.
-      }
-      case CashWithdrawn ignored -> {
-        // The resulting balance arrives as an AccountUpdated event.
-      }
     }
   }
 
   /**
-   * Seeds an account's opening balances before the engine starts (funding). Safe
-   * because no matching thread is running yet.
+   * Seeds an account's opening asset before the engine starts (genesis endowment).
+   * Safe because no matching thread is running yet.
    *
    * @param accountId the account
-   * @param cash      opening cash
-   * @param asset     opening asset
+   * @param asset     opening asset for this pair
    */
-  public void seedAccount(long accountId, long cash, long asset) {
-    balances.put(accountId, new Account(accountId, cash, asset));
+  public void seedAsset(long accountId, long asset) {
+    assets.put(accountId, asset);
   }
 
   /**
@@ -71,12 +62,12 @@ public final class MarketDataCache implements EventPublisher {
   }
 
   /**
-   * The latest known balances for an account.
+   * The latest known asset holding for an account in this pair.
    *
    * @param accountId the account
-   * @return the account snapshot, or empty if unknown
+   * @return the asset holding, or empty if unknown
    */
-  public Optional<Account> balanceOf(long accountId) {
-    return Optional.ofNullable(balances.get(accountId));
+  public Optional<Long> assetOf(long accountId) {
+    return Optional.ofNullable(assets.get(accountId));
   }
 }

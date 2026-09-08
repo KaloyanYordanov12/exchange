@@ -64,6 +64,8 @@ public final class CashLedger {
 
   // The cash state, mutated only on this ledger's single thread (below).
   private final CashBook book = new CashBook();
+  // Optional audit sink, notified on the cash thread when cash enters or leaves.
+  private final CashLedgerListener listener;
 
   private final MpscArrayQueue<CashCommand> ingress;
   private final int capacity;
@@ -80,14 +82,26 @@ public final class CashLedger {
   private final AtomicLong snapshotRequestIds = new AtomicLong();
 
   /**
-   * Creates a cash ledger.
+   * Creates a cash ledger with no audit listener.
    *
    * @param requestedCapacity the ingress capacity (rounded up to a power of two)
    */
   public CashLedger(int requestedCapacity) {
+    this(requestedCapacity, null);
+  }
+
+  /**
+   * Creates a cash ledger that notifies {@code listener} of deposits and
+   * withdrawals on the cash thread (for durable audit off the hot path).
+   *
+   * @param requestedCapacity the ingress capacity (rounded up to a power of two)
+   * @param listener          the audit sink, or {@code null} for none
+   */
+  public CashLedger(int requestedCapacity, CashLedgerListener listener) {
     if (requestedCapacity <= 0) {
       throw new IllegalArgumentException("capacity must be positive: " + requestedCapacity);
     }
+    this.listener = listener;
     this.ingress = new MpscArrayQueue<>(requestedCapacity);
     this.capacity = ingress.capacity();
   }
@@ -144,9 +158,25 @@ public final class CashLedger {
    */
   void process(CashCommand command) {
     switch (command) {
-      case Deposit deposit -> book.deposit(deposit.account(), deposit.amount());
+      case Deposit deposit -> {
+        book.deposit(deposit.account(), deposit.amount());
+        if (listener != null) {
+          listener.onDeposit(
+              deposit.account(),
+              deposit.amount(),
+              book.availableOf(deposit.account()),
+              deposit.reference());
+        }
+      }
       case Withdrawal withdrawal -> {
         boolean applied = book.withdraw(withdrawal.account(), withdrawal.amount());
+        if (applied && listener != null) {
+          listener.onWithdrawal(
+              withdrawal.account(),
+              withdrawal.amount(),
+              book.availableOf(withdrawal.account()),
+              withdrawal.reference());
+        }
         withdrawOutcomes.put(
             withdrawal.requestId(),
             applied ? WithdrawalResult.APPLIED : WithdrawalResult.INSUFFICIENT_FUNDS);

@@ -7,18 +7,17 @@ import dev.kaloyanyordanov.exchange.book.OrderId;
 import dev.kaloyanyordanov.exchange.book.PriceLevel;
 import dev.kaloyanyordanov.exchange.book.Side;
 import dev.kaloyanyordanov.exchange.book.Trade;
-import dev.kaloyanyordanov.exchange.ledger.Account;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class MarketDataCacheTest {
 
   @Test
-  void startsWithAnEmptyBookAndNoBalances() {
+  void startsWithAnEmptyBookAndNoAssets() {
     MarketDataCache cache = new MarketDataCache();
     assertThat(cache.book().bids()).isEmpty();
     assertThat(cache.book().asks()).isEmpty();
-    assertThat(cache.balanceOf(1L)).isEmpty();
+    assertThat(cache.assetOf(1L)).isEmpty();
   }
 
   @Test
@@ -31,17 +30,17 @@ class MarketDataCacheTest {
   }
 
   @Test
-  void accountUpdatedUpdatesBalance() {
+  void accountUpdatedUpdatesAsset() {
     MarketDataCache cache = new MarketDataCache();
-    cache.publish(new AccountUpdated(7L, 900L, 12L));
-    assertThat(cache.balanceOf(7L)).contains(new Account(7L, 900L, 12L));
+    cache.publish(new AccountUpdated(7L, 12L));
+    assertThat(cache.assetOf(7L)).contains(12L);
   }
 
   @Test
-  void seedAccountSetsOpeningBalance() {
+  void seedAssetSetsOpeningAsset() {
     MarketDataCache cache = new MarketDataCache();
-    cache.seedAccount(3L, 1_000L, 50L);
-    assertThat(cache.balanceOf(3L)).contains(new Account(3L, 1_000L, 50L));
+    cache.seedAsset(3L, 50L);
+    assertThat(cache.assetOf(3L)).contains(50L);
   }
 
   @Test
@@ -53,6 +52,6 @@ class MarketDataCacheTest {
     cache.publish(
         new TradeExecuted(new Trade(OrderId.of(1L), OrderId.of(2L), 100L, 5L, 1L, 2L, 0L)));
     assertThat(cache.book().bids()).isEmpty();
-    assertThat(cache.balanceOf(1L)).isEmpty();
+    assertThat(cache.assetOf(1L)).isEmpty();
   }
 }

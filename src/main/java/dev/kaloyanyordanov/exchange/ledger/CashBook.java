@@ -82,6 +82,12 @@ final class CashBook {
     return positions.computeIfAbsent(account, id -> new Position());
   }
 
+  /** The available cash of an account (zero if unknown). */
+  long availableOf(long account) {
+    Position position = positions.get(account);
+    return position == null ? 0L : position.available;
+  }
+
   /** An immutable snapshot of the whole cash ledger. */
   CashSnapshot snapshot() {
     List<CashAccount> accounts = new ArrayList<>(positions.size());

@@ -1,29 +1,27 @@
 package dev.kaloyanyordanov.exchange.payment;
 
-import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
-import dev.kaloyanyordanov.exchange.engine.SubmitResult;
-import dev.kaloyanyordanov.exchange.engine.WithdrawalOutcome;
+import dev.kaloyanyordanov.exchange.ledger.CashLedger;
+import dev.kaloyanyordanov.exchange.ledger.WithdrawalResult;
 import java.time.Duration;
 import java.util.Objects;
 
 /**
  * Orchestrates deposits and withdrawals across the {@link PaymentProvider} and the
- * {@link MatchingEngine}, keeping the balance-changing step serial on the matching
- * thread.
+ * shared {@link CashLedger}, keeping the balance-changing step serial on the cash
+ * ledger's single thread.
  *
- * <p><b>Ordering.</b> Both operations authorize with the provider first to obtain
- * a reference, then apply the balance change on the matching thread, which is the
- * sole authority on funds:
+ * <p><b>Ordering.</b> Both operations authorize with the provider first to obtain a
+ * reference, then apply the balance change on the cash thread, which is the sole
+ * authority on funds:
  *
  * <ul>
- *   <li><b>Deposit</b> — the provider authorizes the incoming funds, then the
- *       engine credits the account (a serial, audited {@code CashDeposited} event).
- *   <li><b>Withdrawal</b> — the provider authorizes a reference, then the engine
- *       performs the sufficient-funds check and debit atomically on the matching
- *       thread. The debit is the authority: it can never over-draw committed funds
- *       or drive a balance negative. The demo provider moves no real money, so a
- *       real adapter must add its settlement step <em>after</em> this debit
- *       succeeds — never before.
+ *   <li><b>Deposit</b> - the provider authorizes the incoming funds, then the cash
+ *       ledger credits the account's available cash.
+ *   <li><b>Withdrawal</b> - the provider authorizes a reference, then the cash ledger
+ *       performs the sufficient-funds check and debit atomically. The debit is the
+ *       authority: it can never over-draw, it touches only available (not reserved)
+ *       cash, and the demo provider moves no real money. A real adapter must add its
+ *       settlement step after this debit succeeds, never before.
  * </ul>
  *
  * <p>The system is fail-secure: if the provider declines, nothing is credited or
@@ -32,27 +30,26 @@ import java.util.Objects;
 public final class PaymentService {
 
   private final PaymentProvider provider;
-  private final MatchingEngine engine;
+  private final CashLedger cashLedger;
   private final Duration withdrawalTimeout;
 
   /**
    * Creates a payment service.
    *
    * @param provider          the payment provider (the demo provider in this build)
-   * @param engine            the matching engine that applies the balance change
-   * @param withdrawalTimeout how long to wait for the matching thread's withdrawal
-   *     outcome
+   * @param cashLedger        the shared cash ledger that applies the balance change
+   * @param withdrawalTimeout how long to wait for the cash thread's withdrawal outcome
    */
   public PaymentService(
-      PaymentProvider provider, MatchingEngine engine, Duration withdrawalTimeout) {
+      PaymentProvider provider, CashLedger cashLedger, Duration withdrawalTimeout) {
     this.provider = Objects.requireNonNull(provider, "provider");
-    this.engine = Objects.requireNonNull(engine, "engine");
+    this.cashLedger = Objects.requireNonNull(cashLedger, "cashLedger");
     this.withdrawalTimeout = Objects.requireNonNull(withdrawalTimeout, "withdrawalTimeout");
   }
 
   /**
-   * Deposits {@code amount} into {@code accountId}: the provider authorizes it,
-   * then the credit is enqueued for the matching thread.
+   * Deposits {@code amount} into {@code accountId}: the provider authorizes it, then
+   * the credit is enqueued for the cash ledger.
    *
    * @param accountId the account to credit
    * @param amount    the amount in scaled integer quote units (must be positive)
@@ -63,17 +60,15 @@ public final class PaymentService {
     if (!authorization.success()) {
       return new FundingResult(FundingStatus.PROVIDER_DECLINED, authorization.reference());
     }
-    SubmitResult submit = engine.deposit(accountId, amount, authorization.reference());
-    if (submit != SubmitResult.ENQUEUED) {
-      return new FundingResult(FundingStatus.UNAVAILABLE, authorization.reference());
-    }
-    return new FundingResult(FundingStatus.ACCEPTED, authorization.reference());
+    boolean enqueued = cashLedger.deposit(accountId, amount, authorization.reference());
+    FundingStatus status = enqueued ? FundingStatus.ACCEPTED : FundingStatus.UNAVAILABLE;
+    return new FundingResult(status, authorization.reference());
   }
 
   /**
    * Withdraws {@code amount} from {@code accountId}: the provider authorizes a
-   * reference, then the matching thread performs the sufficient-funds check and
-   * debit atomically.
+   * reference, then the cash ledger performs the sufficient-funds check and debit
+   * atomically.
    *
    * @param accountId the account to debit
    * @param amount    the amount in scaled integer quote units (must be positive)
@@ -84,8 +79,8 @@ public final class PaymentService {
     if (!authorization.success()) {
       return new FundingResult(FundingStatus.PROVIDER_DECLINED, authorization.reference());
     }
-    WithdrawalOutcome outcome =
-        engine.withdraw(accountId, amount, authorization.reference(), withdrawalTimeout);
+    WithdrawalResult outcome =
+        cashLedger.withdraw(accountId, amount, authorization.reference(), withdrawalTimeout);
     FundingStatus status =
         switch (outcome) {
           case APPLIED -> FundingStatus.APPLIED;
