@@ -1,47 +1,64 @@
 package dev.kaloyanyordanov.exchange.api;
 
-import dev.kaloyanyordanov.exchange.invariant.InvariantMonitor;
 import dev.kaloyanyordanov.exchange.invariant.InvariantReport;
+import dev.kaloyanyordanov.exchange.platform.ExchangeRegistry;
+import java.util.Map;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Public, read-only invariant panel. Anyone can watch the seven invariants stay
- * green under load without any admin control. {@code /invariants} returns the
- * latest continuous verdict cheaply; {@code /invariants/check} forces a fresh
- * check.
+ * Public, read-only per-pair invariant panel. Anyone can watch a pair's invariants
+ * stay green under load without any admin control. {@code /invariants?pair=} returns
+ * the latest continuous verdict cheaply; {@code /invariants/check?pair=} forces a
+ * fresh check.
  */
 @RestController
 public class InvariantController {
 
-  private final InvariantMonitor monitor;
+  private final ExchangeRegistry registry;
 
   /**
    * Creates the controller.
    *
-   * @param monitor the invariant monitor
+   * @param registry the pair registry
    */
-  public InvariantController(InvariantMonitor monitor) {
-    this.monitor = monitor;
+  public InvariantController(ExchangeRegistry registry) {
+    this.registry = registry;
   }
 
   /**
-   * The latest continuous invariant verdict.
+   * The latest continuous invariant verdict for a pair.
    *
-   * @return the latest report
+   * @param pair the pair id
+   * @return the latest report, or 404 for an unknown pair
    */
   @GetMapping("/invariants")
-  public InvariantReport latest() {
-    return monitor.latest();
+  public ResponseEntity<Object> latest(@RequestParam String pair) {
+    if (!registry.hasPair(pair)) {
+      return unknownPair();
+    }
+    return ResponseEntity.ok(registry.invariants(pair));
   }
 
   /**
-   * Forces a fresh on-demand invariant check.
+   * Forces a fresh on-demand invariant check for a pair.
    *
-   * @return the fresh report
+   * @param pair the pair id
+   * @return the fresh report, or 404 for an unknown pair
    */
   @GetMapping("/invariants/check")
-  public InvariantReport check() {
-    return monitor.checkNow();
+  public ResponseEntity<Object> check(@RequestParam String pair) {
+    if (!registry.hasPair(pair)) {
+      return unknownPair();
+    }
+    InvariantReport report = registry.checkInvariants(pair);
+    return ResponseEntity.ok(report);
+  }
+
+  private static ResponseEntity<Object> unknownPair() {
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "unknown pair"));
   }
 }

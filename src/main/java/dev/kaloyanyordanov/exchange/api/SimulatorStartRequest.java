@@ -4,6 +4,7 @@ package dev.kaloyanyordanov.exchange.api;
  * Request body to start a simulator run. Traders act on the configured (funded)
  * accounts; the caller only dials the load and price behaviour.
  *
+ * @param pair               the pair id to run the simulator on ({@code base-quote})
  * @param traderCount        number of concurrent traders
  * @param ordersPerTrader    max orders each trader submits
  * @param orderRatePerSecond per-trader pacing (0 = unbounded)
@@ -16,6 +17,7 @@ package dev.kaloyanyordanov.exchange.api;
  * @param maxLatencySamples  cap on retained latency samples
  */
 public record SimulatorStartRequest(
+    String pair,
     int traderCount,
     int ordersPerTrader,
     long orderRatePerSecond,

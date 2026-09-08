@@ -2,9 +2,11 @@ package dev.kaloyanyordanov.exchange.api;
 
 import dev.kaloyanyordanov.exchange.book.BookSnapshot;
 import dev.kaloyanyordanov.exchange.book.Side;
-import dev.kaloyanyordanov.exchange.ledger.Account;
 import dev.kaloyanyordanov.exchange.payment.FundingResult;
+import dev.kaloyanyordanov.exchange.platform.ExchangeRegistry;
+import dev.kaloyanyordanov.exchange.platform.PairInfo;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -13,44 +15,60 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * REST endpoints over the engine. Handlers submit to the ingress queue and read
- * from the published market-data cache; they never touch the book or ledger.
+ * REST endpoints over the multi-pair platform. Handlers route by pair to the right
+ * engine's gateway (submitting to that engine's ingress and reading its published
+ * read model); they never touch a book or ledger off its owning thread. The pairs
+ * and book endpoints are public market data; orders and accounts require the key.
  */
 @RestController
 public class ExchangeController {
 
-  private final ExchangeService service;
+  private final ExchangeRegistry registry;
 
   /**
    * Creates the controller.
    *
-   * @param service the API gateway
+   * @param registry the pair registry / routing hub
    */
-  public ExchangeController(ExchangeService service) {
-    this.service = service;
+  public ExchangeController(ExchangeRegistry registry) {
+    this.registry = registry;
   }
 
   /**
-   * Places a limit order for the authenticated account.
+   * The tradable pairs (public markets listing).
    *
-   * @param request the order request
+   * @return the pair descriptors
+   */
+  @GetMapping("/pairs")
+  public List<PairInfo> pairs() {
+    return registry.pairs();
+  }
+
+  /**
+   * Places a limit order for the authenticated account on the requested pair.
+   *
+   * @param request the order request (pair, side, price, quantity)
    * @param http    the servlet request carrying the resolved account id
-   * @return 202 accepted with the order id, 400 on invalid input, or 503 when busy
+   * @return 202 accepted with the order id; 400 invalid; 404 unknown pair; 422
+   *     insufficient cash; 503 busy
    */
   @PostMapping("/orders")
   public ResponseEntity<Object> placeOrder(
       @RequestBody PlaceOrderRequest request, HttpServletRequest http) {
+    if (request.pair() == null || !registry.hasPair(request.pair())) {
+      return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "unknown pair"));
+    }
     Optional<Side> side = parseSide(request.side());
     if (side.isEmpty()) {
       return ResponseEntity.badRequest().body(Map.of("error", "side must be BUY or SELL"));
     }
-
     long accountId = accountId(http);
     PlacementOutcome outcome =
-        service.place(accountId, side.get(), request.price(), request.quantity());
+        registry.place(request.pair(), accountId, side.get(), request.price(), request.quantity());
     return switch (outcome.status()) {
       case ACCEPTED ->
           ResponseEntity.accepted().body(new OrderResponse(outcome.orderId(), "ACCEPTED"));
@@ -65,35 +83,37 @@ public class ExchangeController {
   }
 
   /**
-   * The current order-book snapshot (read-only, from the published read model).
+   * The current order-book snapshot for a pair (public read model).
    *
-   * @return the book snapshot
+   * @param pair the pair id
+   * @return the book snapshot, or 404 for an unknown pair
    */
   @GetMapping("/book")
-  public BookSnapshot book() {
-    return service.book();
+  public ResponseEntity<Object> book(@RequestParam String pair) {
+    if (!registry.hasPair(pair)) {
+      return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "unknown pair"));
+    }
+    BookSnapshot snapshot = registry.book(pair);
+    return ResponseEntity.ok(snapshot);
   }
 
   /**
-   * The authenticated account's balances.
+   * The authenticated account's balances: shared cash plus per-pair asset holdings.
    *
    * @param http the servlet request carrying the resolved account id
-   * @return the caller's balances (zeroes if not yet known)
+   * @return the caller's balances
    */
   @GetMapping("/accounts/me")
-  public BalanceResponse me(HttpServletRequest http) {
-    long accountId = accountId(http);
-    Account account = service.balance(accountId);
-    return new BalanceResponse(accountId, account.cash(), account.asset());
+  public ExchangeRegistry.AccountBalances me(HttpServletRequest http) {
+    return registry.balance(accountId(http));
   }
 
   /**
-   * Deposits cash into the authenticated account (demo payment provider).
+   * Deposits cash into the authenticated account (pair-independent).
    *
    * @param request the amount to deposit
    * @param http    the servlet request carrying the resolved account id
-   * @return 202 accepted once authorized and enqueued, or 400 on a non-positive
-   *     amount
+   * @return 202 accepted once authorized and enqueued, or 400 on a non-positive amount
    */
   @PostMapping("/accounts/deposit")
   public ResponseEntity<Object> deposit(
@@ -103,17 +123,16 @@ public class ExchangeController {
     }
     long accountId = accountId(http);
     return fundingResponse(
-        accountId, request.amount(), service.deposit(accountId, request.amount()));
+        accountId, request.amount(), registry.deposit(accountId, request.amount()));
   }
 
   /**
-   * Withdraws cash from the authenticated account. The debit is atomic on the
-   * matching thread, so it can never over-draw committed funds or go negative.
+   * Withdraws cash from the authenticated account (pair-independent). The debit is
+   * atomic on the cash thread and touches only available cash.
    *
    * @param request the amount to withdraw
    * @param http    the servlet request carrying the resolved account id
-   * @return 200 on success, 422 on insufficient funds, or 400 on a non-positive
-   *     amount
+   * @return 200 success, 422 insufficient funds, or 400 on a non-positive amount
    */
   @PostMapping("/accounts/withdraw")
   public ResponseEntity<Object> withdraw(
@@ -123,7 +142,7 @@ public class ExchangeController {
     }
     long accountId = accountId(http);
     return fundingResponse(
-        accountId, request.amount(), service.withdraw(accountId, request.amount()));
+        accountId, request.amount(), registry.withdraw(accountId, request.amount()));
   }
 
   private static ResponseEntity<Object> fundingResponse(
@@ -137,9 +156,7 @@ public class ExchangeController {
           case UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
         };
     return ResponseEntity.status(status)
-        .body(
-            new FundingResponse(
-                accountId, amount, result.status().name(), result.reference()));
+        .body(new FundingResponse(accountId, amount, result.status().name(), result.reference()));
   }
 
   private static long accountId(HttpServletRequest http) {

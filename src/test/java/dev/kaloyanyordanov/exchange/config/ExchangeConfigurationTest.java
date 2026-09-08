@@ -6,25 +6,17 @@ import static org.mockito.Mockito.mock;
 import dev.kaloyanyordanov.exchange.api.AdminAuthFilter;
 import dev.kaloyanyordanov.exchange.api.ApiKeyAuthFilter;
 import dev.kaloyanyordanov.exchange.api.TraderRegistry;
-import dev.kaloyanyordanov.exchange.book.BookSnapshot;
-import dev.kaloyanyordanov.exchange.book.PriceLevel;
-import dev.kaloyanyordanov.exchange.book.Symbol;
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties.SymbolProperties;
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties.TraderProperties;
-import dev.kaloyanyordanov.exchange.engine.BookChanged;
-import dev.kaloyanyordanov.exchange.engine.FanoutPublisher;
-import dev.kaloyanyordanov.exchange.engine.MarketDataCache;
-import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
-import dev.kaloyanyordanov.exchange.ledger.AssetLedger;
-import dev.kaloyanyordanov.exchange.ledger.CashAccount;
 import dev.kaloyanyordanov.exchange.ledger.CashLedger;
 import dev.kaloyanyordanov.exchange.ledger.CashLedgerListener;
+import dev.kaloyanyordanov.exchange.payment.DemoPaymentProvider;
+import dev.kaloyanyordanov.exchange.payment.PaymentProvider;
+import dev.kaloyanyordanov.exchange.payment.PaymentService;
 import dev.kaloyanyordanov.exchange.persistence.PersistenceWorker;
+import dev.kaloyanyordanov.exchange.platform.ExchangeRegistry;
 import dev.kaloyanyordanov.exchange.realtime.MarketDataWebSocketHandler;
 import dev.kaloyanyordanov.exchange.realtime.ThrottledBroadcaster;
-import dev.kaloyanyordanov.exchange.sim.LoadSimulator;
-import dev.kaloyanyordanov.exchange.sim.SimulatorMetricsSink;
-import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -40,7 +32,6 @@ class ExchangeConfigurationTest {
           1_000,
           List.of(new TraderProperties(1L, "hash", 500L, 20L)),
           null);
-  private static final Duration TIMEOUT = Duration.ofSeconds(2);
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -60,70 +51,30 @@ class ExchangeConfigurationTest {
     return mock(ObjectProvider.class);
   }
 
-  private FanoutPublisher publisher(MarketDataCache cache) {
-    return configuration.fanoutPublisher(
-        cache, broadcaster(), new SimulatorMetricsSink(), noPersistence());
+  @Test
+  void paymentProviderIsTheDemoProvider() {
+    assertThat(configuration.paymentProvider()).isInstanceOf(DemoPaymentProvider.class);
   }
 
   @Test
-  void buildsSymbolFromProperties() {
-    Symbol symbol = configuration.symbol(PROPERTIES);
-    assertThat(symbol.base()).isEqualTo("BTC");
-    assertThat(symbol.quote()).isEqualTo("USD");
-    assertThat(symbol.tickSize()).isEqualTo(5L);
-    assertThat(symbol.lotSize()).isEqualTo(2L);
-  }
-
-  @Test
-  void endowsAssetLedgerFromTraders() {
-    AssetLedger ledger = configuration.assetLedger(PROPERTIES);
-    assertThat(ledger.assetOf(1L)).isEqualTo(20L);
-  }
-
-  @Test
-  void seedsReadModelAssetFromTraders() {
-    MarketDataCache cache = configuration.marketDataCache(PROPERTIES);
-    assertThat(cache.assetOf(1L)).contains(20L);
-  }
-
-  @Test
-  void genesisFunderDepositsOpeningCashThroughTheCashLedger() throws InterruptedException {
+  void buildsPaymentService() {
     CashLedger cash = configuration.cashLedger(PROPERTIES, noListener());
-    cash.start();
-    try {
-      configuration.genesisFunder(cash, PROPERTIES).fund();
-      long available =
-          cash.snapshot(TIMEOUT).orElseThrow().accounts().stream()
-              .filter(account -> account.accountId() == 1L)
-              .findFirst()
-              .map(CashAccount::available)
-              .orElse(0L);
-      assertThat(available).isEqualTo(500L);
-    } finally {
-      cash.stop();
-    }
+    PaymentService service = configuration.paymentService(new DemoPaymentProvider(), cash, 2000L);
+    assertThat(service).isNotNull();
   }
 
   @Test
-  void engineUsesConfiguredCapacity() throws InterruptedException {
+  void buildsRegistryWithTheFiveStandardPairs() {
     CashLedger cash = configuration.cashLedger(PROPERTIES, noListener());
-    MatchingEngine engine =
-        configuration.matchingEngine(
-            configuration.symbol(PROPERTIES),
-            PROPERTIES,
-            publisher(new MarketDataCache()),
-            configuration.assetLedger(PROPERTIES),
-            cash);
-    assertThat(engine.ingressCapacity()).isEqualTo(1024);
-  }
-
-  @Test
-  void fanoutForwardsToTheReadModelAndBroadcaster() {
-    MarketDataCache cache = new MarketDataCache();
-    FanoutPublisher fanout = publisher(cache);
-    BookSnapshot snapshot = new BookSnapshot(List.of(new PriceLevel(100L, 5L)), List.of());
-    fanout.publish(new BookChanged(snapshot));
-    assertThat(cache.book()).isEqualTo(snapshot);
+    PaymentProvider provider = configuration.paymentProvider();
+    PaymentService payment = configuration.paymentService(provider, cash, 2000L);
+    ExchangeRegistry registry =
+        configuration.exchangeRegistry(
+            PROPERTIES, cash, payment, broadcaster(), noPersistence(), 2000L, 1000L, 2000L);
+    assertThat(registry.pairs()).hasSize(5);
+    assertThat(registry.hasPair("BTC-USD")).isTrue();
+    assertThat(registry.hasPair("DOGE-USD")).isTrue();
+    assertThat(registry.hasPair("NOPE-USD")).isFalse();
   }
 
   @Test
@@ -131,22 +82,6 @@ class ExchangeConfigurationTest {
     FilterRegistrationBean<AdminAuthFilter> registration =
         configuration.adminAuthFilter("$2a$10$hash");
     assertThat(registration.getUrlPatterns()).containsExactly("/admin/*");
-  }
-
-  @Test
-  void loadSimulatorIsBuilt() {
-    CashLedger cash = configuration.cashLedger(PROPERTIES, noListener());
-    MatchingEngine engine =
-        configuration.matchingEngine(
-            configuration.symbol(PROPERTIES),
-            PROPERTIES,
-            publisher(new MarketDataCache()),
-            configuration.assetLedger(PROPERTIES),
-            cash);
-    LoadSimulator simulator =
-        configuration.loadSimulator(
-            engine, configuration.symbol(PROPERTIES), cash, new SimulatorMetricsSink());
-    assertThat(simulator.isRunning()).isFalse();
   }
 
   @Test

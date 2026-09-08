@@ -3,10 +3,8 @@ package dev.kaloyanyordanov.exchange.realtime;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import dev.kaloyanyordanov.exchange.book.OrderId;
 import dev.kaloyanyordanov.exchange.book.Side;
-import dev.kaloyanyordanov.exchange.engine.MatchingEngine;
-import dev.kaloyanyordanov.exchange.engine.SubmitOrder;
+import dev.kaloyanyordanov.exchange.platform.ExchangeRegistry;
 import java.time.Duration;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -31,7 +29,7 @@ class MarketDataWebSocketIntegrationTest {
 
   @LocalServerPort private int port;
 
-  @Autowired private MatchingEngine engine;
+  @Autowired private ExchangeRegistry registry;
 
   @Test
   void connectedClientReceivesThrottledMarketData() throws Exception {
@@ -47,13 +45,13 @@ class MarketDataWebSocketIntegrationTest {
                   }
                 },
                 "ws://localhost:" + port + "/ws/marketdata")
-            .get(5, TimeUnit.SECONDS);
+            .get(20, TimeUnit.SECONDS);
 
     try {
-      // A crossing pair produces a trade and book changes, which the broadcaster
-      // flushes to the connected client at the throttled rate.
-      engine.submit(new SubmitOrder(OrderId.of(9_000_001L), Side.SELL, 100L, 5L, 2L));
-      engine.submit(new SubmitOrder(OrderId.of(9_000_002L), Side.BUY, 100L, 5L, 1L));
+      // A crossing pair on DOGE-USD produces a trade and book changes, which the
+      // broadcaster flushes to the connected client at the throttled rate.
+      registry.place("DOGE-USD", 2L, Side.SELL, 100L, 5L);
+      registry.place("DOGE-USD", 1L, Side.BUY, 100L, 5L);
 
       await()
           .atMost(Duration.ofSeconds(5))

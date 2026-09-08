@@ -9,9 +9,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import dev.kaloyanyordanov.exchange.invariant.CheckReport;
 import dev.kaloyanyordanov.exchange.invariant.Invariant;
-import dev.kaloyanyordanov.exchange.invariant.InvariantMonitor;
 import dev.kaloyanyordanov.exchange.invariant.InvariantReport;
 import dev.kaloyanyordanov.exchange.invariant.InvariantResult;
+import dev.kaloyanyordanov.exchange.platform.ExchangeRegistry;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,40 +20,48 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class InvariantControllerTest {
 
-  private final InvariantMonitor monitor = mock(InvariantMonitor.class);
+  private final ExchangeRegistry registry = mock(ExchangeRegistry.class);
   private MockMvc mockMvc;
 
   @BeforeEach
   void setUp() {
-    mockMvc = MockMvcBuilders.standaloneSetup(new InvariantController(monitor)).build();
+    when(registry.hasPair("BTC-USD")).thenReturn(true);
+    mockMvc = MockMvcBuilders.standaloneSetup(new InvariantController(registry)).build();
   }
 
   @Test
-  void latestReturnsTheMonitorsLatestVerdict() throws Exception {
-    when(monitor.latest())
+  void latestReturnsThePairsLatestVerdict() throws Exception {
+    when(registry.invariants("BTC-USD"))
         .thenReturn(
             InvariantReport.of(
-                CheckReport.of(List.of(InvariantResult.pass(Invariant.CASH_CONSERVATION)))));
+                CheckReport.of(List.of(InvariantResult.pass(Invariant.ASSET_CONSERVATION)))));
     mockMvc
-        .perform(get("/invariants"))
+        .perform(get("/invariants").param("pair", "BTC-USD"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.available").value(true))
         .andExpect(jsonPath("$.allPassed").value(true))
-        .andExpect(jsonPath("$.results[0].invariant").value("CASH_CONSERVATION"));
+        .andExpect(jsonPath("$.results[0].invariant").value("ASSET_CONSERVATION"));
   }
 
   @Test
   void checkForcesFreshCheck() throws Exception {
-    when(monitor.checkNow())
+    when(registry.checkInvariants("BTC-USD"))
         .thenReturn(
             InvariantReport.of(
                 CheckReport.of(
                     List.of(InvariantResult.fail(Invariant.BOOK_NOT_CROSSED, "crossed")))));
     mockMvc
-        .perform(get("/invariants/check"))
+        .perform(get("/invariants/check").param("pair", "BTC-USD"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.allPassed").value(false))
         .andExpect(jsonPath("$.results[0].passed").value(false));
-    verify(monitor).checkNow();
+    verify(registry).checkInvariants("BTC-USD");
+  }
+
+  @Test
+  void unknownPairReturns404() throws Exception {
+    mockMvc
+        .perform(get("/invariants").param("pair", "NOPE-USD"))
+        .andExpect(status().isNotFound());
   }
 }

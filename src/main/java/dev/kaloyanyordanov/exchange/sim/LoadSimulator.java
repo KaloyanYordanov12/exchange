@@ -35,7 +35,7 @@ public final class LoadSimulator {
   private final Symbol symbol;
   private final CashLedger cashLedger;
   private final SimulatorMetricsSink sink;
-  private final AtomicLong orderIds = new AtomicLong(ORDER_ID_BASE);
+  private final AtomicLong orderIds;
   private final Object lifecycle = new Object();
 
   private volatile RunMetrics metrics;
@@ -50,17 +50,37 @@ public final class LoadSimulator {
    * @param cashLedger the shared cash ledger, for reserving a buy's cash like the API
    * @param sink       the metrics sink that records processed events
    */
+  public LoadSimulator(
+      MatchingEngine engine, Symbol symbol, CashLedger cashLedger, SimulatorMetricsSink sink) {
+    this(engine, symbol, cashLedger, sink, ORDER_ID_BASE);
+  }
+
+  /**
+   * Creates a simulator whose order ids start at {@code orderIdBase}, so a per-pair
+   * simulator's ids stay in a distinct range for shared persistence.
+   *
+   * @param engine      the matching engine to drive through its real ingress
+   * @param symbol      the traded symbol (tick/lot for order generation)
+   * @param cashLedger  the shared cash ledger, for reserving a buy's cash like the API
+   * @param sink        the metrics sink that records processed events
+   * @param orderIdBase the first order id this simulator assigns
+   */
   @SuppressFBWarnings(
       value = "EI_EXPOSE_REP2",
       justification =
           "the engine and cash ledger are shared singleton services the simulator drives through"
               + " their real ingress; storing the shared references is the intended design")
   public LoadSimulator(
-      MatchingEngine engine, Symbol symbol, CashLedger cashLedger, SimulatorMetricsSink sink) {
+      MatchingEngine engine,
+      Symbol symbol,
+      CashLedger cashLedger,
+      SimulatorMetricsSink sink,
+      long orderIdBase) {
     this.engine = engine;
     this.symbol = symbol;
     this.cashLedger = cashLedger;
     this.sink = sink;
+    this.orderIds = new AtomicLong(orderIdBase);
   }
 
   /**

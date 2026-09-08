@@ -3,11 +3,11 @@ package dev.kaloyanyordanov.exchange.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import dev.kaloyanyordanov.exchange.api.ExchangeService;
 import dev.kaloyanyordanov.exchange.api.PlacementOutcome;
 import dev.kaloyanyordanov.exchange.book.Side;
 import dev.kaloyanyordanov.exchange.payment.FundingStatus;
 import dev.kaloyanyordanov.exchange.payment.PaymentService;
+import dev.kaloyanyordanov.exchange.platform.ExchangeRegistry;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.MethodOrderer;
@@ -45,7 +45,9 @@ class PersistencePostgresIntegrationTest {
     registry.add("spring.datasource.password", POSTGRES::getPassword);
   }
 
-  @Autowired private ExchangeService exchangeService;
+  private static final String PAIR = "DOGE-USD";
+
+  @Autowired private ExchangeRegistry registry;
   @Autowired private PaymentService paymentService;
   @Autowired private OrderRepository orderRepository;
   @Autowired private TradeRepository tradeRepository;
@@ -54,10 +56,11 @@ class PersistencePostgresIntegrationTest {
   @Test
   @Order(1)
   void persistsOrdersAndTrades() {
-    // Bob (account 2) sells; Alice (account 1) reserves and buys, crossing.
-    assertThat(exchangeService.place(2L, Side.SELL, 100L, 10L).status())
+    // Bob (account 2) sells; Alice (account 1) reserves and buys, crossing on DOGE-USD
+    // (tick 1, so price 100 is valid and affordable against the genesis cash).
+    assertThat(registry.place(PAIR, 2L, Side.SELL, 100L, 10L).status())
         .isEqualTo(PlacementOutcome.Status.ACCEPTED);
-    assertThat(exchangeService.place(1L, Side.BUY, 100L, 10L).status())
+    assertThat(registry.place(PAIR, 1L, Side.BUY, 100L, 10L).status())
         .isEqualTo(PlacementOutcome.Status.ACCEPTED);
 
     await()

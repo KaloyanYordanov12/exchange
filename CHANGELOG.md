@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SOL/USD, XRP/USD, DOGE/USD — as the default catalog, spanning five orders of price
   magnitude (BTC ~10^10 down to DOGE ~10^4 micro-USD). Scaled-integer price and
   notional math is proven exact at both the BTC and DOGE magnitudes.
+- **Phase M1 — multi-pair backend (complete).** Five independent engines routed by
+  pair: an `ExchangeRegistry` owns one `MatchingEngine` (its own thread, book, asset
+  ledger, read model, invariant monitor, and simulator) per pair - BTC/USD, ETH/USD,
+  SOL/USD, XRP/USD, DOGE/USD - all sharing the single `CashLedger`. Every operation
+  is routed by pair id: `GET /pairs`, `GET /book?pair`, `POST /orders` (pair in the
+  body), `GET /invariants?pair`, `POST /admin/simulator/*` (pair-scoped);
+  deposits/withdrawals and the balance (shared cash plus per-pair asset holdings) are
+  pair-independent. Per-pair id ranges keep shared persistence keys globally unique.
+  Engine independence is proven (an order on one pair never touches another's book),
+  and the cross-pair cash model is proven race-free through the real engines: one
+  account buying concurrently on two engines that share the cash ledger never races,
+  double-spends, or goes negative, and cash is conserved.
 - **Phase M1 — multi-pair backend (in progress).** Engine cash boundary: the
   matching engine no longer owns cash. It settles the asset leg through its per-pair
   `AssetLedger` and the cash leg through the shared `CashLedger` (a message send per

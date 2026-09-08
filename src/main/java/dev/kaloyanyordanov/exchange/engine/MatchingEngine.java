@@ -119,13 +119,36 @@ public final class MatchingEngine {
       EventPublisher publisher,
       AssetLedger assetLedger,
       CashLedger cashLedger) {
+    this(symbol, requestedCapacity, publisher, assetLedger, cashLedger, 0L);
+  }
+
+  /**
+   * Creates a fully-wired pair engine whose trade sequence starts at
+   * {@code tradeSequenceBase}, so trades from different pairs get globally unique
+   * sequence ids for shared persistence.
+   *
+   * @param symbol            the traded symbol
+   * @param requestedCapacity the ingress capacity (rounded up to a power of two)
+   * @param publisher         the outbound event sink
+   * @param assetLedger       the per-pair asset ledger and fill policy
+   * @param cashLedger        the shared cash ledger for cash settlement
+   * @param tradeSequenceBase the first trade sequence id assigned by this engine
+   */
+  public MatchingEngine(
+      Symbol symbol,
+      int requestedCapacity,
+      EventPublisher publisher,
+      AssetLedger assetLedger,
+      CashLedger cashLedger,
+      long tradeSequenceBase) {
     this(
         symbol,
         requestedCapacity,
         publisher,
         Objects.requireNonNull(assetLedger, "assetLedger"),
         assetLedger,
-        Objects.requireNonNull(cashLedger, "cashLedger"));
+        Objects.requireNonNull(cashLedger, "cashLedger"),
+        tradeSequenceBase);
   }
 
   private MatchingEngine(
@@ -135,6 +158,17 @@ public final class MatchingEngine {
       FillPolicy policy,
       AssetLedger assetLedger,
       CashLedger cashLedger) {
+    this(symbol, requestedCapacity, publisher, policy, assetLedger, cashLedger, 0L);
+  }
+
+  private MatchingEngine(
+      Symbol symbol,
+      int requestedCapacity,
+      EventPublisher publisher,
+      FillPolicy policy,
+      AssetLedger assetLedger,
+      CashLedger cashLedger,
+      long tradeSequenceBase) {
     Objects.requireNonNull(symbol, "symbol");
     if (requestedCapacity <= 0) {
       throw new IllegalArgumentException("capacity must be positive: " + requestedCapacity);
@@ -147,6 +181,7 @@ public final class MatchingEngine {
     this.capacity = ingress.capacity();
     this.book = new OrderBook(symbol);
     this.initialTotalAsset = assetLedger != null ? assetLedger.totalAsset() : 0L;
+    this.tradeSequence = tradeSequenceBase;
   }
 
   /**
