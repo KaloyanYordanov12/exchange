@@ -23,7 +23,8 @@ class MarketDataWebSocketHandlerTest {
     WebSocketSession session = mock(WebSocketSession.class);
     when(session.getId()).thenReturn(id);
     when(session.getUri())
-        .thenReturn(URI.create("ws://localhost/ws/marketdata" + (query == null ? "" : "?" + query)));
+        .thenReturn(
+            URI.create("ws://localhost/ws/marketdata" + (query == null ? "" : "?" + query)));
     return session;
   }
 

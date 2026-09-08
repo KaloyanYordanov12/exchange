@@ -34,7 +34,8 @@ import tools.jackson.core.JacksonException;
 public final class ThrottledBroadcaster implements EventPublisher {
 
   /** A book snapshot message, tagged with its pair so a client can route it. */
-  public record BookMessage(String type, String pair, List<PriceLevel> bids, List<PriceLevel> asks) {
+  public record BookMessage(
+      String type, String pair, List<PriceLevel> bids, List<PriceLevel> asks) {
     /** Defensive copies for immutability. */
     public BookMessage {
       bids = List.copyOf(bids);
