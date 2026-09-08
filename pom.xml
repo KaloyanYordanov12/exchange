@@ -24,6 +24,11 @@
              (useful on memory-constrained machines, where surefire and PIT together
              exceed available RAM). Mutation analysis is then run as a separate pass. -->
         <pitest.skip>false</pitest.skip>
+        <!-- The React/Vite SPA is built into the jar during prepare-package (so plain
+             `mvn test` stays fast and needs no Node). Set -Dfrontend.skip=true to skip
+             the Node/npm build, e.g. for a backend-only package. -->
+        <frontend.skip>false</frontend.skip>
+        <node.version>v22.14.0</node.version>
     </properties>
 
     <dependencies>
@@ -130,6 +135,79 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+
+            <!-- Builds the React/Vite SPA (src/main/frontend) into the jar. Bound to
+                 prepare-package so plain `mvn test`/`compile` never touch Node; a full
+                 `mvn verify`/`package` installs a pinned Node, runs a reproducible
+                 `npm ci`, and builds the production bundle. -->
+            <plugin>
+                <groupId>com.github.eirslett</groupId>
+                <artifactId>frontend-maven-plugin</artifactId>
+                <version>1.15.1</version>
+                <configuration>
+                    <workingDirectory>src/main/frontend</workingDirectory>
+                    <installDirectory>${project.build.directory}</installDirectory>
+                    <skip>${frontend.skip}</skip>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>install-node-and-npm</id>
+                        <goals>
+                            <goal>install-node-and-npm</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <nodeVersion>${node.version}</nodeVersion>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>npm-ci</id>
+                        <goals>
+                            <goal>npm</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <arguments>ci</arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>npm-build</id>
+                        <goals>
+                            <goal>npm</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <arguments>run build</arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Copies the built SPA into the classpath static root so Spring Boot
+                 serves it from the jar. Runs after the npm build, same phase. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-frontend-bundle</id>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <skip>${frontend.skip}</skip>
+                            <outputDirectory>${project.build.outputDirectory}/static</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>src/main/frontend/dist</directory>
+                                    <filtering>false</filtering>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
 
             <!-- Surefire: default includes only match *Test/*Tests/Test*, which
