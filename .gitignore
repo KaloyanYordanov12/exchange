@@ -62,3 +62,8 @@ exchange-simulator-invariants-brief.md
 
 # Phase 8.5 working brief — must never be committed.
 exchange-deposits-brief.md
+
+# ---- Claude Design prototypes (visual reference only, not deliverable code) ----
+*.dc.html
+support.js
+.thumbnail

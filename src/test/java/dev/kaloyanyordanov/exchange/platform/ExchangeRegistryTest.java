@@ -8,12 +8,13 @@ import dev.kaloyanyordanov.exchange.book.Side;
 import dev.kaloyanyordanov.exchange.candle.CandleStore;
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties.PairProperties;
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties.TraderProperties;
-import dev.kaloyanyordanov.exchange.engine.EventPublisher;
 import dev.kaloyanyordanov.exchange.ledger.CashLedger;
 import dev.kaloyanyordanov.exchange.payment.DemoPaymentProvider;
 import dev.kaloyanyordanov.exchange.payment.PaymentService;
+import dev.kaloyanyordanov.exchange.realtime.PairBroadcasters;
 import java.time.Duration;
 import java.util.List;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,19 +30,21 @@ class ExchangeRegistryTest {
   void setUp() {
     cash = new CashLedger(4096);
     PaymentService payment = new PaymentService(new DemoPaymentProvider(), cash, TIMEOUT);
-    EventPublisher noop = event -> {};
     List<PairProperties> pairs =
         List.of(
             new PairProperties("AAA", "USD", 1L, 1L, 100L),
             new PairProperties("BBB", "USD", 1L, 1L, 100L));
+    PairBroadcasters broadcasters =
+        new PairBroadcasters(
+            List.of("AAA-USD", "BBB-USD"), new ObjectMapper()::writeValueAsString, 10, 8, 64);
     List<TraderProperties> traders =
         List.of(
             new TraderProperties(1L, "h", 1_000_000L, 1_000L),
             new TraderProperties(2L, "h", 1_000_000L, 1_000L));
     registry =
         new ExchangeRegistry(
-            pairs, 4096, cash, payment, noop, null, new CandleStore(), traders, TIMEOUT, 1000L,
-            2000L);
+            pairs, 4096, cash, payment, broadcasters, null, new CandleStore(), traders, TIMEOUT,
+            1000L, 2000L);
     registry.start();
   }
 

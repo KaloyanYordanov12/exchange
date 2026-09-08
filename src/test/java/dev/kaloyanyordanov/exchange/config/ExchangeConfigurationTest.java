@@ -17,7 +17,7 @@ import dev.kaloyanyordanov.exchange.payment.PaymentService;
 import dev.kaloyanyordanov.exchange.persistence.PersistenceWorker;
 import dev.kaloyanyordanov.exchange.platform.ExchangeRegistry;
 import dev.kaloyanyordanov.exchange.realtime.MarketDataWebSocketHandler;
-import dev.kaloyanyordanov.exchange.realtime.ThrottledBroadcaster;
+import dev.kaloyanyordanov.exchange.realtime.PairBroadcasters;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -38,8 +38,8 @@ class ExchangeConfigurationTest {
 
   private final ExchangeConfiguration configuration = new ExchangeConfiguration();
 
-  private ThrottledBroadcaster broadcaster() {
-    return configuration.broadcaster(MAPPER, PROPERTIES);
+  private PairBroadcasters pairBroadcasters() {
+    return configuration.pairBroadcasters(MAPPER, PROPERTIES);
   }
 
   @SuppressWarnings("unchecked")
@@ -71,8 +71,8 @@ class ExchangeConfigurationTest {
     PaymentService payment = configuration.paymentService(provider, cash, 2000L);
     ExchangeRegistry registry =
         configuration.exchangeRegistry(
-            PROPERTIES, cash, payment, broadcaster(), noPersistence(), configuration.candleStore(),
-            2000L, 1000L, 2000L);
+            PROPERTIES, cash, payment, pairBroadcasters(), noPersistence(),
+            configuration.candleStore(), 2000L, 1000L, 2000L);
     assertThat(registry.pairs()).hasSize(5);
     assertThat(registry.hasPair("BTC-USD")).isTrue();
     assertThat(registry.hasPair("DOGE-USD")).isTrue();
@@ -95,14 +95,18 @@ class ExchangeConfigurationTest {
   }
 
   @Test
-  void broadcasterIsBuilt() {
-    assertThat(broadcaster().clientCount()).isZero();
+  void broadcastersAreBuiltOnePerPair() {
+    PairBroadcasters broadcasters = pairBroadcasters();
+    assertThat(broadcasters.all()).hasSize(5);
+    assertThat(broadcasters.forPair("BTC-USD")).isNotNull();
+    assertThat(broadcasters.forPair("DOGE-USD").pairId()).isEqualTo("DOGE-USD");
+    assertThat(broadcasters.forPair("NOPE-USD")).isNull();
   }
 
   @Test
   void webSocketHandlerIsBuilt() {
     MarketDataWebSocketHandler handler =
-        configuration.marketDataWebSocketHandler(broadcaster(), PROPERTIES);
+        configuration.marketDataWebSocketHandler(pairBroadcasters(), PROPERTIES);
     assertThat(handler.connectionCount()).isZero();
   }
 

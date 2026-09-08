@@ -15,8 +15,9 @@ import dev.kaloyanyordanov.exchange.payment.PaymentService;
 import dev.kaloyanyordanov.exchange.persistence.PersistenceWorker;
 import dev.kaloyanyordanov.exchange.platform.ExchangeRegistry;
 import dev.kaloyanyordanov.exchange.realtime.MarketDataWebSocketHandler;
-import dev.kaloyanyordanov.exchange.realtime.ThrottledBroadcaster;
+import dev.kaloyanyordanov.exchange.realtime.PairBroadcasters;
 import java.time.Duration;
+import java.util.List;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -53,16 +54,21 @@ public class ExchangeConfiguration {
   }
 
   /**
-   * The throttling broadcaster, started/stopped with the application context.
+   * The per-pair throttling broadcasters (one stream per pair), started/stopped with
+   * the application context. Each pair's engine feeds only its own broadcaster, and a
+   * WebSocket client subscribes to a single pair, so the five streams never mix.
    *
    * @param mapper     the JSON serializer source
    * @param properties the exchange configuration
-   * @return the broadcaster
+   * @return the per-pair broadcasters
    */
   @Bean(initMethod = "start", destroyMethod = "stop")
-  public ThrottledBroadcaster broadcaster(ObjectMapper mapper, ExchangeProperties properties) {
+  public PairBroadcasters pairBroadcasters(ObjectMapper mapper, ExchangeProperties properties) {
     ExchangeProperties.BroadcastProperties broadcast = properties.broadcast();
-    return new ThrottledBroadcaster(
+    List<String> pairIds =
+        properties.pairs().stream().map(ExchangeProperties.PairProperties::pairId).toList();
+    return new PairBroadcasters(
+        pairIds,
         mapper::writeValueAsString,
         broadcast.bookHertz(),
         broadcast.maxTradesPerFlush(),
@@ -146,7 +152,7 @@ public class ExchangeConfiguration {
    * @param properties     the exchange configuration
    * @param cashLedger     the shared cash ledger
    * @param paymentService the deposit/withdrawal orchestrator
-   * @param broadcaster    the shared real-time broadcast sink
+   * @param broadcasters   the per-pair real-time broadcast sinks
    * @param persistence    the optional shared persistence sink
    * @param candleStore    the shared candle store
    * @param ledgerTimeout  the reservation/balance snapshot timeout in millis
@@ -159,7 +165,7 @@ public class ExchangeConfiguration {
       ExchangeProperties properties,
       CashLedger cashLedger,
       PaymentService paymentService,
-      ThrottledBroadcaster broadcaster,
+      PairBroadcasters broadcasters,
       ObjectProvider<PersistenceWorker> persistence,
       CandleStore candleStore,
       @Value("${exchange.ledger.timeout-millis:2000}") long ledgerTimeout,
@@ -171,7 +177,7 @@ public class ExchangeConfiguration {
         properties.ingressCapacity(),
         cashLedger,
         paymentService,
-        broadcaster,
+        broadcasters,
         persistenceSink,
         candleStore,
         properties.traders(),
@@ -197,17 +203,17 @@ public class ExchangeConfiguration {
   }
 
   /**
-   * The market-data WebSocket handler.
+   * The market-data WebSocket handler, routing each connection to its pair's stream.
    *
-   * @param broadcaster the broadcaster
-   * @param properties  the exchange configuration
+   * @param broadcasters the per-pair broadcasters
+   * @param properties   the exchange configuration
    * @return the handler
    */
   @Bean
   public MarketDataWebSocketHandler marketDataWebSocketHandler(
-      ThrottledBroadcaster broadcaster, ExchangeProperties properties) {
+      PairBroadcasters broadcasters, ExchangeProperties properties) {
     return new MarketDataWebSocketHandler(
-        broadcaster, properties.broadcast().clientBufferSize());
+        broadcasters, properties.broadcast().clientBufferSize());
   }
 
   /**

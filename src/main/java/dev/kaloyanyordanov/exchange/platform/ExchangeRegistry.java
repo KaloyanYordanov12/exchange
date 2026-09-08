@@ -20,6 +20,7 @@ import dev.kaloyanyordanov.exchange.ledger.AssetLedger;
 import dev.kaloyanyordanov.exchange.ledger.CashLedger;
 import dev.kaloyanyordanov.exchange.payment.FundingResult;
 import dev.kaloyanyordanov.exchange.payment.PaymentService;
+import dev.kaloyanyordanov.exchange.realtime.PairBroadcasters;
 import dev.kaloyanyordanov.exchange.sim.LoadSimulator;
 import dev.kaloyanyordanov.exchange.sim.MetricsSnapshot;
 import dev.kaloyanyordanov.exchange.sim.SimulatorConfig;
@@ -90,7 +91,7 @@ public final class ExchangeRegistry {
    * @param ingressCapacity     each engine's ingress capacity
    * @param cashLedger          the shared cash ledger
    * @param paymentService      the deposit/withdrawal orchestrator
-   * @param broadcaster         the shared real-time broadcast sink
+   * @param broadcasters        the per-pair real-time broadcast sinks
    * @param persistence         the optional shared persistence sink
    * @param candleStore         the shared candle store the per-pair aggregators feed
    * @param traders             the configured traders (for genesis endowment)
@@ -101,7 +102,7 @@ public final class ExchangeRegistry {
   @SuppressFBWarnings(
       value = "EI_EXPOSE_REP2",
       justification =
-          "the cash ledger, payment service, broadcaster, and persistence sink are shared"
+          "the cash ledger, payment service, broadcasters, and persistence sink are shared"
               + " singleton services; the registry stores the shared references and owns the"
               + " engines it builds around them by design")
   public ExchangeRegistry(
@@ -109,7 +110,7 @@ public final class ExchangeRegistry {
       int ingressCapacity,
       CashLedger cashLedger,
       PaymentService paymentService,
-      EventPublisher broadcaster,
+      PairBroadcasters broadcasters,
       EventPublisher persistence,
       CandleStore candleStore,
       List<TraderProperties> traders,
@@ -132,8 +133,9 @@ public final class ExchangeRegistry {
       SimulatorMetricsSink metricsSink = new SimulatorMetricsSink();
       CandleAggregatorWorker candleWorker =
           new CandleAggregatorWorker(symbol.pairId(), candleStore, ingressCapacity, 500);
+      EventPublisher pairBroadcaster = broadcasters.forPair(symbol.pairId());
       List<EventPublisher> sinks =
-          new ArrayList<>(List.of(marketData, broadcaster, metricsSink, candleWorker));
+          new ArrayList<>(List.of(marketData, pairBroadcaster, metricsSink, candleWorker));
       if (persistence != null) {
         sinks.add(persistence);
       }

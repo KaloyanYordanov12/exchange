@@ -33,7 +33,7 @@ class ThrottledBroadcasterTest {
   }
 
   private static ThrottledBroadcaster broadcaster() {
-    return new ThrottledBroadcaster(MAPPER::writeValueAsString, 10, 4, 1024);
+    return new ThrottledBroadcaster("BTC-USD", MAPPER::writeValueAsString, 10, 4, 1024);
   }
 
   private static BookChanged bookWithBid(long price, long quantity) {
@@ -49,10 +49,29 @@ class ThrottledBroadcasterTest {
   @Test
   void rejectsInvalidConfiguration() {
     JsonSerializer serializer = MAPPER::writeValueAsString;
-    assertThatThrownBy(() -> new ThrottledBroadcaster(serializer, 0, 4, 16))
+    assertThatThrownBy(() -> new ThrottledBroadcaster("BTC-USD", serializer, 0, 4, 16))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> new ThrottledBroadcaster(serializer, 10, 0, 16))
+    assertThatThrownBy(() -> new ThrottledBroadcaster("BTC-USD", serializer, 10, 0, 16))
         .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new ThrottledBroadcaster("  ", serializer, 10, 4, 16))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void tagsFramesWithThePairId() throws Exception {
+    ThrottledBroadcaster broadcaster =
+        new ThrottledBroadcaster("ETH-USD", MAPPER::writeValueAsString, 10, 4, 64);
+    RecordingSink sink = new RecordingSink();
+    broadcaster.register(sink);
+
+    broadcaster.publish(bookWithBid(50L, 5L));
+    broadcaster.publish(trade(100L, 2L, 0L));
+    broadcaster.flush();
+
+    assertThat(broadcaster.pairId()).isEqualTo("ETH-USD");
+    for (String message : sink.messages) {
+      assertThat(MAPPER.readTree(message).get("pair").asText()).isEqualTo("ETH-USD");
+    }
   }
 
   @Test
@@ -170,7 +189,7 @@ class ThrottledBroadcasterTest {
         value -> {
           throw new JacksonException("boom") {};
         };
-    ThrottledBroadcaster broadcaster = new ThrottledBroadcaster(failing, 10, 4, 16);
+    ThrottledBroadcaster broadcaster = new ThrottledBroadcaster("BTC-USD", failing, 10, 4, 16);
     RecordingSink sink = new RecordingSink();
     broadcaster.register(sink);
 

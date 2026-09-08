@@ -67,7 +67,7 @@ class MarketDataWebSocketIntegrationTest {
     for (int attempt = 0; attempt < 4; attempt++) {
       try {
         return new StandardWebSocketClient()
-            .execute(handler, "ws://localhost:" + port + "/ws/marketdata")
+            .execute(handler, "ws://localhost:" + port + "/ws/marketdata?pair=DOGE-USD")
             .get(20, TimeUnit.SECONDS);
       } catch (Exception failure) {
         last = failure;

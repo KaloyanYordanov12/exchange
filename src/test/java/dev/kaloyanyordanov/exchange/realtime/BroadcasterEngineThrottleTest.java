@@ -34,7 +34,7 @@ class BroadcasterEngineThrottleTest {
   @Test
   void floodOfBookChangesCollapsesToOneSnapshotPerFlush() throws InterruptedException {
     ThrottledBroadcaster broadcaster =
-        new ThrottledBroadcaster(new ObjectMapper()::writeValueAsString, 10, 256, 4096);
+        new ThrottledBroadcaster("BTC-USD", new ObjectMapper()::writeValueAsString, 10, 256, 4096);
     RecordingSink sink = new RecordingSink();
     broadcaster.register(sink);
 

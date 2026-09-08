@@ -33,8 +33,8 @@ import tools.jackson.core.JacksonException;
  */
 public final class ThrottledBroadcaster implements EventPublisher {
 
-  /** A book snapshot message. */
-  public record BookMessage(String type, List<PriceLevel> bids, List<PriceLevel> asks) {
+  /** A book snapshot message, tagged with its pair so a client can route it. */
+  public record BookMessage(String type, String pair, List<PriceLevel> bids, List<PriceLevel> asks) {
     /** Defensive copies for immutability. */
     public BookMessage {
       bids = List.copyOf(bids);
@@ -42,8 +42,8 @@ public final class ThrottledBroadcaster implements EventPublisher {
     }
   }
 
-  /** A batch of trade-tape entries. */
-  public record TradeMessage(String type, List<TapeEntry> trades) {
+  /** A batch of trade-tape entries, tagged with its pair so a client can route it. */
+  public record TradeMessage(String type, String pair, List<TapeEntry> trades) {
     /** Defensive copy for immutability. */
     public TradeMessage {
       trades = List.copyOf(trades);
@@ -53,6 +53,7 @@ public final class ThrottledBroadcaster implements EventPublisher {
   /** One public trade-tape entry (no account or order identity). */
   public record TapeEntry(long price, long quantity, long sequence) {}
 
+  private final String pairId;
   private final JsonSerializer serializer;
   private final int maxTradesPerFlush;
   private final long periodMillis;
@@ -65,8 +66,11 @@ public final class ThrottledBroadcaster implements EventPublisher {
   private ScheduledExecutorService scheduler;
 
   /**
-   * Creates a broadcaster.
+   * Creates a broadcaster for one pair. Every frame it emits is tagged with this
+   * pair id, and clients subscribe to a single pair's stream (see the WebSocket
+   * handler), so the five pairs' market data never mix on the wire.
    *
+   * @param pairId            the pair this broadcaster serves
    * @param serializer        the JSON serializer
    * @param bookHertz         book snapshot flush rate in Hz
    * @param maxTradesPerFlush the maximum trades emitted per flush
@@ -78,13 +82,21 @@ public final class ThrottledBroadcaster implements EventPublisher {
           "serializer is a stateless, effectively-immutable function; sharing the reference is"
               + " intentional and safe")
   public ThrottledBroadcaster(
-      JsonSerializer serializer, int bookHertz, int maxTradesPerFlush, int tapeCapacity) {
+      String pairId,
+      JsonSerializer serializer,
+      int bookHertz,
+      int maxTradesPerFlush,
+      int tapeCapacity) {
+    if (pairId == null || pairId.isBlank()) {
+      throw new IllegalArgumentException("pair id must be provided");
+    }
     if (bookHertz <= 0) {
       throw new IllegalArgumentException("book rate must be positive: " + bookHertz);
     }
     if (maxTradesPerFlush <= 0) {
       throw new IllegalArgumentException("max trades per flush must be positive");
     }
+    this.pairId = pairId;
     this.serializer = serializer;
     this.maxTradesPerFlush = maxTradesPerFlush;
     this.periodMillis = 1_000L / bookHertz;
@@ -141,10 +153,10 @@ public final class ThrottledBroadcaster implements EventPublisher {
     }
     List<String> messages = new ArrayList<>(2);
     if (book != null) {
-      toJson(new BookMessage("book", book.bids(), book.asks())).ifPresent(messages::add);
+      toJson(new BookMessage("book", pairId, book.bids(), book.asks())).ifPresent(messages::add);
     }
     if (!trades.isEmpty()) {
-      toJson(new TradeMessage("trades", tape(trades))).ifPresent(messages::add);
+      toJson(new TradeMessage("trades", pairId, tape(trades))).ifPresent(messages::add);
     }
     for (ClientSink client : clients) {
       for (String message : messages) {
@@ -213,5 +225,14 @@ public final class ThrottledBroadcaster implements EventPublisher {
    */
   public long serializationFailures() {
     return serializationFailures.get();
+  }
+
+  /**
+   * The pair this broadcaster serves.
+   *
+   * @return the pair id
+   */
+  public String pairId() {
+    return pairId;
   }
 }
