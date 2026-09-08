@@ -1,6 +1,5 @@
 package dev.kaloyanyordanov.exchange.realtime;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import dev.kaloyanyordanov.exchange.book.Side;
@@ -42,13 +41,14 @@ class MarketDataWebSocketIntegrationTest {
       registry.place("DOGE-USD", 2L, Side.SELL, 100L, 5L);
       registry.place("DOGE-USD", 1L, Side.BUY, 100L, 5L);
 
+      // Generous window: under heavy CI load the async broadcast can lag well past a
+      // few seconds. Both a book snapshot and the trade tape must arrive.
       await()
-          .atMost(Duration.ofSeconds(5))
+          .atMost(Duration.ofSeconds(20))
           .until(
               () ->
-                  received.stream()
-                      .anyMatch(message -> message.contains("\"type\":\"book\"")));
-      assertThat(received).anyMatch(message -> message.contains("\"type\":\"trades\""));
+                  received.stream().anyMatch(m -> m.contains("\"type\":\"book\""))
+                      && received.stream().anyMatch(m -> m.contains("\"type\":\"trades\"")));
     } finally {
       session.close(CloseStatus.NORMAL);
     }

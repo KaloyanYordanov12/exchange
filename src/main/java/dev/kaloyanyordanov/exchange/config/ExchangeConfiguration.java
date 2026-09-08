@@ -3,6 +3,7 @@ package dev.kaloyanyordanov.exchange.config;
 import dev.kaloyanyordanov.exchange.api.AdminAuthFilter;
 import dev.kaloyanyordanov.exchange.api.ApiKeyAuthFilter;
 import dev.kaloyanyordanov.exchange.api.TraderRegistry;
+import dev.kaloyanyordanov.exchange.candle.CandleSeedRunner;
 import dev.kaloyanyordanov.exchange.candle.CandleService;
 import dev.kaloyanyordanov.exchange.candle.CandleStore;
 import dev.kaloyanyordanov.exchange.engine.EventPublisher;
@@ -117,6 +118,24 @@ public class ExchangeConfiguration {
   @Bean
   public CandleService candleService(CandleStore candleStore) {
     return new CandleService(candleStore);
+  }
+
+  /**
+   * Seeds labeled synthetic pre-launch candle history at startup, only when enabled.
+   *
+   * @param properties  the exchange configuration (for the pairs)
+   * @param candleStore the candle store to seed into
+   * @param enabled     whether seeding is enabled ({@code exchange.seed.enabled})
+   * @param baseSeed    the reproducible RNG base seed
+   * @return the seed runner
+   */
+  @Bean(initMethod = "run")
+  public CandleSeedRunner candleSeedRunner(
+      ExchangeProperties properties,
+      CandleStore candleStore,
+      @Value("${exchange.seed.enabled:false}") boolean enabled,
+      @Value("${exchange.seed.base-seed:42}") long baseSeed) {
+    return new CandleSeedRunner(properties.pairs(), candleStore, enabled, baseSeed);
   }
 
   /**

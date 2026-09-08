@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SOL/USD, XRP/USD, DOGE/USD — as the default catalog, spanning five orders of price
   magnitude (BTC ~10^10 down to DOGE ~10^4 micro-USD). Scaled-integer price and
   notional math is proven exact at both the BTC and DOGE magnitudes.
+- **Phase M3 — labeled synthetic pre-history seed.** A deterministic random-walk
+  `CandleSeeder` backfills each pair and timeframe with plausible pre-launch history
+  from the pair's reference price, ending just before a launch boundary. Seeded
+  candles are valid candles (they satisfy every M2 invariant, at both BTC and DOGE
+  price magnitudes) and are always marked `SEEDED`, never passed off as real (section
+  5); real trades from launch append to the same series as `REAL`, and the query API
+  exposes the boundary so the chart can delineate them. Seeding is off unless
+  `exchange.seed.enabled=true` (fail-honest: a real run shows only real trades), and
+  is reproducible for a given seed.
 - **Phase M2 — OHLCV candle aggregation.** Each pair's trade stream is folded into
   candles across every timeframe (1m, 5m, 15m, 1h, 4h, 1d, 1w, 1M; the `1y` view is
   daily candles over a range) by a per-pair async `CandleAggregatorWorker` off the

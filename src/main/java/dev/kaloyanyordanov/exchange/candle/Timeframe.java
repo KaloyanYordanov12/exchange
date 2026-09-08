@@ -81,4 +81,19 @@ public enum Timeframe {
               .toInstant();
     };
   }
+
+  /**
+   * The bucket start {@code steps} buckets away from an existing bucket start
+   * (negative for earlier buckets). Calendar-aware for the monthly timeframe.
+   *
+   * @param bucketStart an aligned bucket start
+   * @param steps       how many buckets to move (may be negative)
+   * @return the resulting bucket start
+   */
+  public Instant advance(Instant bucketStart, long steps) {
+    if (this == MO1) {
+      return bucketStart.atZone(ZoneOffset.UTC).plusMonths(steps).toInstant();
+    }
+    return Instant.ofEpochSecond(bucketStart.getEpochSecond() + steps * seconds);
+  }
 }

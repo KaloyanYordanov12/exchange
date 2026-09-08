@@ -130,7 +130,7 @@ class ExchangeApiIntegrationTest {
     // (the DOGE simulator never runs, so this delta is exact regardless of other
     // tests). Cash is shared across pairs, so it is not asserted here.
     await()
-        .atMost(Duration.ofSeconds(5))
+        .atMost(Duration.ofSeconds(20))
         .untilAsserted(
             () ->
                 org.assertj.core.api.Assertions.assertThat(holding(ALICE_KEY))
@@ -145,7 +145,7 @@ class ExchangeApiIntegrationTest {
     // The async candle aggregator folds the trade into a 1m candle, queryable and
     // labeled REAL (no seed in M2, so realBoundary is set).
     await()
-        .atMost(Duration.ofSeconds(5))
+        .atMost(Duration.ofSeconds(20))
         .untilAsserted(
             () ->
                 mockMvc

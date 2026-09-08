@@ -51,6 +51,20 @@ class TimeframeTest {
   }
 
   @Test
+  void advancesBucketsForwardAndBack() {
+    Instant hour = at("2025-01-01T10:00:00Z");
+    assertThat(Timeframe.H1.advance(hour, 3L)).isEqualTo(at("2025-01-01T13:00:00Z"));
+    assertThat(Timeframe.H1.advance(hour, -2L)).isEqualTo(at("2025-01-01T08:00:00Z"));
+    assertThat(Timeframe.D1.advance(at("2025-01-10T00:00:00Z"), -5L))
+        .isEqualTo(at("2025-01-05T00:00:00Z"));
+    // Months are calendar-aware, not a fixed number of seconds.
+    assertThat(Timeframe.MO1.advance(at("2025-03-01T00:00:00Z"), -4L))
+        .isEqualTo(at("2024-11-01T00:00:00Z"));
+    assertThat(Timeframe.MO1.advance(at("2025-11-01T00:00:00Z"), 3L))
+        .isEqualTo(at("2026-02-01T00:00:00Z"));
+  }
+
+  @Test
   void labelsRoundTrip() {
     for (Timeframe timeframe : Timeframe.values()) {
       assertThat(Timeframe.fromLabel(timeframe.label())).isEqualTo(timeframe);

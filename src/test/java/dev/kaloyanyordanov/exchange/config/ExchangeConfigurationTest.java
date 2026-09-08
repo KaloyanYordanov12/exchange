@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import dev.kaloyanyordanov.exchange.api.AdminAuthFilter;
 import dev.kaloyanyordanov.exchange.api.ApiKeyAuthFilter;
 import dev.kaloyanyordanov.exchange.api.TraderRegistry;
+import dev.kaloyanyordanov.exchange.candle.CandleSeedRunner;
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties.SymbolProperties;
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties.TraderProperties;
 import dev.kaloyanyordanov.exchange.ledger.CashLedger;
@@ -76,6 +77,14 @@ class ExchangeConfigurationTest {
     assertThat(registry.hasPair("BTC-USD")).isTrue();
     assertThat(registry.hasPair("DOGE-USD")).isTrue();
     assertThat(registry.hasPair("NOPE-USD")).isFalse();
+  }
+
+  @Test
+  void buildsCandleServiceAndDisabledSeedRunnerByDefault() {
+    assertThat(configuration.candleService(configuration.candleStore())).isNotNull();
+    CandleSeedRunner runner =
+        configuration.candleSeedRunner(PROPERTIES, configuration.candleStore(), false, 42L);
+    assertThat(runner.enabled()).isFalse();
   }
 
   @Test

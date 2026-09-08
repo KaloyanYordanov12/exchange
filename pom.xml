@@ -20,6 +20,10 @@
     <properties>
         <java.version>25</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Default off; set -Dpitest.skip=true to run the other gates without PIT
+             (useful on memory-constrained machines, where surefire and PIT together
+             exceed available RAM). Mutation analysis is then run as a separate pass. -->
+        <pitest.skip>false</pitest.skip>
     </properties>
 
     <dependencies>
@@ -315,9 +319,10 @@
                     <!-- Bounded so mutation analysis fits in constrained memory: a
                          single minion with a capped heap (the excluded slow Spring
                          tests never run here, so the fast unit tests fit easily). -->
+                    <skip>${pitest.skip}</skip>
                     <threads>1</threads>
                     <jvmArgs>
-                        <value>-Xmx640m</value>
+                        <value>-Xmx448m</value>
                     </jvmArgs>
                     <mutationThreshold>70</mutationThreshold>
                 </configuration>
