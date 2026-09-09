@@ -35,7 +35,7 @@ import tools.jackson.databind.ObjectMapper;
  * so no request is served before matching is live.
  */
 @Configuration
-@EnableConfigurationProperties(ExchangeProperties.class)
+@EnableConfigurationProperties({ExchangeProperties.class, SimProperties.class})
 public class ExchangeConfiguration {
 
   /**

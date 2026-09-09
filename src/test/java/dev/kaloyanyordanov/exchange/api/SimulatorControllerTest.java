@@ -1,5 +1,6 @@
 package dev.kaloyanyordanov.exchange.api;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -14,12 +15,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties;
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties.SymbolProperties;
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties.TraderProperties;
+import dev.kaloyanyordanov.exchange.config.SimProperties;
 import dev.kaloyanyordanov.exchange.platform.ExchangeRegistry;
 import dev.kaloyanyordanov.exchange.sim.LatencySummary;
 import dev.kaloyanyordanov.exchange.sim.MetricsSnapshot;
+import dev.kaloyanyordanov.exchange.sim.SimulatorConfig;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -27,13 +31,14 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class SimulatorControllerTest {
 
   private final ExchangeRegistry registry = mock(ExchangeRegistry.class);
+  private ExchangeProperties properties;
   private MockMvc mockMvc;
 
   @BeforeEach
   void setUp() {
     when(registry.hasPair("BTC-USD")).thenReturn(true);
     when(registry.simulatorMetrics("BTC-USD")).thenReturn(MetricsSnapshot.EMPTY);
-    ExchangeProperties properties =
+    properties =
         new ExchangeProperties(
             new SymbolProperties("BTC", "USD", 1L, 1L),
             null,
@@ -41,8 +46,14 @@ class SimulatorControllerTest {
             List.of(
                 new TraderProperties(1L, "h", 0L, 0L), new TraderProperties(2L, "h", 0L, 0L)),
             null);
-    mockMvc =
-        MockMvcBuilders.standaloneSetup(new SimulatorController(registry, properties)).build();
+    // Unlimited cap for the default controller under test.
+    mockMvc = controllerWithCap(null);
+  }
+
+  private MockMvc controllerWithCap(Integer cap) {
+    return MockMvcBuilders.standaloneSetup(
+            new SimulatorController(registry, properties, new SimProperties(cap)))
+        .build();
   }
 
   private static String startBody(int traderCount) {
@@ -62,6 +73,22 @@ class SimulatorControllerTest {
                 .content(startBody(4)))
         .andExpect(status().isAccepted());
     verify(registry).startSimulator(eq("BTC-USD"), any());
+  }
+
+  @Test
+  void startClampsTraderCountToThePublicCap() throws Exception {
+    MockMvc capped = controllerWithCap(2); // hard cap of 2 traders
+    ArgumentCaptor<SimulatorConfig> captor = ArgumentCaptor.forClass(SimulatorConfig.class);
+
+    capped
+        .perform(
+            post("/admin/simulator/start")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(startBody(500))) // requests far above the cap
+        .andExpect(status().isAccepted());
+
+    verify(registry).startSimulator(eq("BTC-USD"), captor.capture());
+    assertThat(captor.getValue().traderCount()).isEqualTo(2);
   }
 
   @Test

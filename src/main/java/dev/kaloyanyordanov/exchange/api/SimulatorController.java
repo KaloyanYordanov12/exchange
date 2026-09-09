@@ -2,6 +2,7 @@ package dev.kaloyanyordanov.exchange.api;
 
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties;
 import dev.kaloyanyordanov.exchange.config.ExchangeProperties.TraderProperties;
+import dev.kaloyanyordanov.exchange.config.SimProperties;
 import dev.kaloyanyordanov.exchange.platform.ExchangeRegistry;
 import dev.kaloyanyordanov.exchange.sim.SimulatorConfig;
 import java.util.List;
@@ -23,16 +24,20 @@ public class SimulatorController {
 
   private final ExchangeRegistry registry;
   private final List<Long> accountIds;
+  private final int publicMaxTraders;
 
   /**
    * Creates the controller.
    *
-   * @param registry   the pair registry
-   * @param properties the exchange configuration (for the funded account ids)
+   * @param registry      the pair registry
+   * @param properties    the exchange configuration (for the funded account ids)
+   * @param simProperties the simulator deployment controls (for the public trader cap)
    */
-  public SimulatorController(ExchangeRegistry registry, ExchangeProperties properties) {
+  public SimulatorController(
+      ExchangeRegistry registry, ExchangeProperties properties, SimProperties simProperties) {
     this.registry = registry;
     this.accountIds = properties.traders().stream().map(TraderProperties::accountId).toList();
+    this.publicMaxTraders = simProperties.publicMaxTraders();
   }
 
   /**
@@ -47,11 +52,14 @@ public class SimulatorController {
     if (request.pair() == null || !registry.hasPair(request.pair())) {
       return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "unknown pair"));
     }
+    // Hard cap: a request above the public limit is clamped down to it, so no caller
+    // can exhaust a constrained deployment. Locally the cap is unlimited.
+    int traderCount = Math.min(request.traderCount(), publicMaxTraders);
     SimulatorConfig config;
     try {
       config =
           new SimulatorConfig(
-              request.traderCount(),
+              traderCount,
               request.ordersPerTrader(),
               request.orderRatePerSecond(),
               request.durationMillis(),
