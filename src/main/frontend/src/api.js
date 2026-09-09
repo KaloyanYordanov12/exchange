@@ -53,6 +53,9 @@ async function req(path, { method = 'GET', body, key, adminKey } = {}) {
 
 export const api = {
   pairs: () => req('/pairs'),
+  // Public, server-enforced simulator limits (trader cap + think-time floor). The UI
+  // reads these to bound its controls to what the server will actually run.
+  simulatorLimits: () => req('/simulator/limits'),
   book: (pair) => req(`/book?pair=${encodeURIComponent(pair)}`),
   candles: (pair, timeframe, from, to) => {
     const params = new URLSearchParams({ pair, timeframe });

@@ -46,13 +46,18 @@ class SimulatorControllerTest {
             List.of(
                 new TraderProperties(1L, "h", 0L, 0L), new TraderProperties(2L, "h", 0L, 0L)),
             null);
-    // Unlimited cap for the default controller under test.
+    // Unlimited cap, no think-time floor for the default controller under test.
     mockMvc = controllerWithCap(null);
   }
 
   private MockMvc controllerWithCap(Integer cap) {
+    return controllerWith(cap, 0L);
+  }
+
+  private MockMvc controllerWith(Integer cap, Long minThinkMillis) {
     return MockMvcBuilders.standaloneSetup(
-            new SimulatorController(registry, properties, new SimProperties(cap, 0)))
+            new SimulatorController(
+                registry, properties, new SimProperties(cap, 0, minThinkMillis)))
         .build();
   }
 
@@ -89,6 +94,53 @@ class SimulatorControllerTest {
 
     verify(registry).startSimulator(eq("BTC-USD"), captor.capture());
     assertThat(captor.getValue().traderCount()).isEqualTo(2);
+  }
+
+  @Test
+  void startClampsThinkTimeUpToTheFloor() throws Exception {
+    MockMvc floored = controllerWith(null, 1000L); // 1s per-trader think-time floor
+    ArgumentCaptor<SimulatorConfig> captor = ArgumentCaptor.forClass(SimulatorConfig.class);
+
+    floored
+        .perform(
+            post("/admin/simulator/start")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(startBody(4))) // request asks for 0/0 think-time (max speed)
+        .andExpect(status().isAccepted());
+
+    verify(registry).startSimulator(eq("BTC-USD"), captor.capture());
+    // Both bounds are raised to the floor, so think-time paces (not max speed).
+    assertThat(captor.getValue().minThinkMillis()).isEqualTo(1000L);
+    assertThat(captor.getValue().maxThinkMillis()).isEqualTo(1000L);
+  }
+
+  @Test
+  void startLeavesThinkTimeAboveTheFloorUntouched() throws Exception {
+    MockMvc floored = controllerWith(null, 1000L);
+    ArgumentCaptor<SimulatorConfig> captor = ArgumentCaptor.forClass(SimulatorConfig.class);
+
+    String body =
+        startBody(4).replace("\"minThinkMillis\":0", "\"minThinkMillis\":3000")
+            .replace("\"maxThinkMillis\":0", "\"maxThinkMillis\":6000");
+    floored
+        .perform(
+            post("/admin/simulator/start")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isAccepted());
+
+    verify(registry).startSimulator(eq("BTC-USD"), captor.capture());
+    assertThat(captor.getValue().minThinkMillis()).isEqualTo(3000L);
+    assertThat(captor.getValue().maxThinkMillis()).isEqualTo(6000L);
+  }
+
+  @Test
+  void limitsReportsTheServerEnforcedCapAndFloor() throws Exception {
+    controllerWith(150, 1000L)
+        .perform(get("/simulator/limits"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.maxTraders").value(150))
+        .andExpect(jsonPath("$.minThinkMillis").value(1000));
   }
 
   @Test

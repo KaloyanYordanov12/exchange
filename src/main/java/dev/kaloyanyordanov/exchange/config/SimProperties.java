@@ -15,17 +15,27 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     human-paced run so the exchange looks alive with no manual launch. {@code 0}
  *     (the local default) turns it off. Each pair's share is itself clamped to
  *     {@code publicMaxTraders}.
+ * @param publicMinThinkTimeMs minimum per-trader think-time, in milliseconds, that any
+ *     {@code /admin/simulator/start} request is clamped up to: a request asking for a
+ *     lower (or zero, i.e. max-speed) think-time has both its think-time bounds raised
+ *     to this floor, so a visitor cannot run traders at zero think-time and flood a
+ *     constrained deployment. Combined with {@code publicMaxTraders} this bounds the
+ *     total order rate. {@code 0} (the local default) means unrestricted.
  */
 @ConfigurationProperties(prefix = "exchange.sim")
-public record SimProperties(Integer publicMaxTraders, Integer ambientTraders) {
+public record SimProperties(
+    Integer publicMaxTraders, Integer ambientTraders, Long publicMinThinkTimeMs) {
 
-  /** Applies the defaults: unlimited cap, ambient off. */
+  /** Applies the defaults: unlimited cap, ambient off, no think-time floor. */
   public SimProperties {
     if (publicMaxTraders == null || publicMaxTraders <= 0) {
       publicMaxTraders = Integer.MAX_VALUE;
     }
     if (ambientTraders == null || ambientTraders < 0) {
       ambientTraders = 0;
+    }
+    if (publicMinThinkTimeMs == null || publicMinThinkTimeMs < 0) {
+      publicMinThinkTimeMs = 0L;
     }
   }
 }

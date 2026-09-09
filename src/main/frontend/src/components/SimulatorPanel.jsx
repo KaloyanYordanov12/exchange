@@ -10,6 +10,12 @@ export function SimulatorPanel({ pairInfo, mid }) {
   const [traders, setTraders] = useState(250);
   const [thinkSeconds, setThinkSeconds] = useState(6); // avg think-time; 0 = max speed
   const [aggression, setAggression] = useState(0.3); // taker fraction; rest is passive
+  // Server-enforced bounds (read from /simulator/limits). The slider caps mirror what
+  // the server will actually run: it clamps trader count down to the cap and think-time
+  // up to the floor regardless, so these only keep the UI honest. Local defaults are
+  // unrestricted (2000-trader UI default, 0s floor = max speed allowed).
+  const [traderMax, setTraderMax] = useState(2000);
+  const [minThinkSeconds, setMinThinkSeconds] = useState(0);
   const [continuous, setContinuous] = useState(true); // default: keep the market alive
   const [durationSeconds, setDurationSeconds] = useState(60); // used when not continuous
   const [metrics, setMetrics] = useState(null);
@@ -20,6 +26,32 @@ export function SimulatorPanel({ pairInfo, mid }) {
   // large roster behaves like a real market. 0 = max-throughput stress test.
   const minThinkMillis = Math.round(thinkSeconds * 1000 * 0.5);
   const maxThinkMillis = Math.round(thinkSeconds * 1000 * 1.5);
+
+  // Read the server's enforced limits once and pull the sliders in to match them.
+  useEffect(() => {
+    let alive = true;
+    api
+      .simulatorLimits()
+      .then((lim) => {
+        if (!alive || !lim) return;
+        const cap = Number(lim.maxTraders);
+        // Unlimited locally (Integer.MAX_VALUE) -> keep the UI default; otherwise cap it.
+        const uiMax = Number.isFinite(cap) ? Math.min(cap, 2000) : 2000;
+        setTraderMax(uiMax);
+        setTraders((t) => Math.min(t, uiMax));
+        const floorSec = Number(lim.minThinkMillis) / 1000;
+        if (Number.isFinite(floorSec) && floorSec > 0) {
+          setMinThinkSeconds(floorSec);
+          setThinkSeconds((s) => Math.max(s, floorSec));
+        }
+      })
+      .catch(() => {
+        /* limits are advisory for the UI; the server still enforces them */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -113,10 +145,10 @@ export function SimulatorPanel({ pairInfo, mid }) {
         <input
           type="range"
           min="10"
-          max="2000"
+          max={traderMax}
           step="10"
           value={traders}
-          onChange={(e) => setTraders(+e.target.value)}
+          onChange={(e) => setTraders(Math.min(+e.target.value, traderMax))}
           style={{ width: '100%', accentColor: C.amber }}
         />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -129,11 +161,11 @@ export function SimulatorPanel({ pairInfo, mid }) {
         </div>
         <input
           type="range"
-          min="0"
+          min={minThinkSeconds}
           max="12"
           step="0.5"
           value={thinkSeconds}
-          onChange={(e) => setThinkSeconds(+e.target.value)}
+          onChange={(e) => setThinkSeconds(Math.max(+e.target.value, minThinkSeconds))}
           style={{ width: '100%', accentColor: C.amber }}
         />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

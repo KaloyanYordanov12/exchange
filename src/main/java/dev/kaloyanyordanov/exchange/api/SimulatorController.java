@@ -25,19 +25,37 @@ public class SimulatorController {
   private final ExchangeRegistry registry;
   private final List<Long> accountIds;
   private final int publicMaxTraders;
+  private final long publicMinThinkMillis;
 
   /**
    * Creates the controller.
    *
    * @param registry      the pair registry
    * @param properties    the exchange configuration (for the funded account ids)
-   * @param simProperties the simulator deployment controls (for the public trader cap)
+   * @param simProperties the simulator deployment controls (public trader cap and
+   *     think-time floor)
    */
   public SimulatorController(
       ExchangeRegistry registry, ExchangeProperties properties, SimProperties simProperties) {
     this.registry = registry;
     this.accountIds = properties.traders().stream().map(TraderProperties::accountId).toList();
     this.publicMaxTraders = simProperties.publicMaxTraders();
+    this.publicMinThinkMillis = simProperties.publicMinThinkTimeMs();
+  }
+
+  /**
+   * The server-enforced simulator limits (public, read-only). The UI reads these to
+   * bound its controls to exactly what the server will run: the trader-count cap and
+   * the per-trader think-time floor. Server-side clamping in {@link #start} is the real
+   * protection; this endpoint only lets the UI reflect it.
+   *
+   * @return the public trader cap and the minimum per-trader think-time in millis
+   */
+  @GetMapping("/simulator/limits")
+  public Map<String, Number> limits() {
+    return Map.of(
+        "maxTraders", publicMaxTraders,
+        "minThinkMillis", publicMinThinkMillis);
   }
 
   /**
@@ -55,6 +73,12 @@ public class SimulatorController {
     // Hard cap: a request above the public limit is clamped down to it, so no caller
     // can exhaust a constrained deployment. Locally the cap is unlimited.
     int traderCount = Math.min(request.traderCount(), publicMaxTraders);
+    // Think-time floor: a request below the floor (including 0 = max speed) has both
+    // think-time bounds raised to it, so a visitor cannot run traders at zero think-time.
+    // Raising both bounds preserves min <= max and forces think-time pacing on (a nonzero
+    // max means orderRatePerSecond is not used). Locally the floor is 0 (unrestricted).
+    long minThinkMillis = Math.max(request.minThinkMillis(), publicMinThinkMillis);
+    long maxThinkMillis = Math.max(request.maxThinkMillis(), publicMinThinkMillis);
     SimulatorConfig config;
     try {
       config =
@@ -70,8 +94,8 @@ public class SimulatorController {
               accountIds,
               request.randomSeed(),
               request.maxLatencySamples(),
-              request.minThinkMillis(),
-              request.maxThinkMillis(),
+              minThinkMillis,
+              maxThinkMillis,
               request.aggression());
     } catch (IllegalArgumentException invalid) {
       return ResponseEntity.badRequest().body(Map.of("error", invalid.getMessage()));
