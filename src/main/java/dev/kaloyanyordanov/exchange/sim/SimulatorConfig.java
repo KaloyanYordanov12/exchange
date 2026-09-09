@@ -5,13 +5,19 @@ import java.util.List;
 /**
  * Configuration for one simulator run. Traders are spread round-robin over the
  * given (pre-funded) accounts and each submits up to {@code ordersPerTrader}
- * orders, paced at {@code orderRatePerSecond} (0 = as fast as possible), stopping
- * at {@code maxDurationMillis}. Prices are a balanced random walk within
- * {@code priceSpreadTicks} of {@code midPrice}, so the book actually trades.
+ * orders, stopping at {@code maxDurationMillis}. Prices are a balanced random walk
+ * within {@code priceSpreadTicks} of {@code midPrice}, so the book actually trades.
+ *
+ * <p>Pacing: between orders each trader pauses a randomized human-like think-time,
+ * uniformly in {@code [minThinkMillis, maxThinkMillis]}, so a large roster behaves
+ * like a realistic market rather than a tight submit loop. Setting both think bounds
+ * to zero gives the max-throughput stress-test mode. When no think-time is set,
+ * {@code orderRatePerSecond} provides a fixed fallback pace (0 = as fast as possible).
  *
  * @param traderCount        number of concurrent (virtual-thread) traders
  * @param ordersPerTrader    max orders each trader submits
- * @param orderRatePerSecond per-trader pacing in orders/second (0 = unbounded)
+ * @param orderRatePerSecond fixed fallback per-trader pace in orders/second (0 =
+ *     unbounded), used only when no think-time is set
  * @param maxDurationMillis  overall run time cap in milliseconds
  * @param midPrice           the mid price in ticks (a tick multiple)
  * @param priceSpreadTicks   max offset from mid, in ticks, for generated prices
@@ -20,6 +26,9 @@ import java.util.List;
  * @param accountIds         the pre-funded accounts traders act on behalf of
  * @param randomSeed         seed for reproducible per-trader order streams
  * @param maxLatencySamples  cap on retained latency samples
+ * @param minThinkMillis     lower bound of the randomized per-trader think-time
+ * @param maxThinkMillis     upper bound of the randomized per-trader think-time
+ *     (0 disables think-time; falls back to {@code orderRatePerSecond})
  */
 public record SimulatorConfig(
     int traderCount,
@@ -32,7 +41,9 @@ public record SimulatorConfig(
     long maxQuantity,
     List<Long> accountIds,
     long randomSeed,
-    int maxLatencySamples) {
+    int maxLatencySamples,
+    long minThinkMillis,
+    long maxThinkMillis) {
 
   /** Validates the configuration. */
   public SimulatorConfig {
@@ -47,6 +58,12 @@ public record SimulatorConfig(
     }
     if (maxDurationMillis <= 0) {
       throw new IllegalArgumentException("maxDurationMillis must be positive");
+    }
+    if (minThinkMillis < 0 || maxThinkMillis < 0) {
+      throw new IllegalArgumentException("think-time bounds must be non-negative");
+    }
+    if (maxThinkMillis > 0 && minThinkMillis > maxThinkMillis) {
+      throw new IllegalArgumentException("require minThinkMillis <= maxThinkMillis");
     }
     if (midPrice <= 0) {
       throw new IllegalArgumentException("midPrice must be positive: " + midPrice);

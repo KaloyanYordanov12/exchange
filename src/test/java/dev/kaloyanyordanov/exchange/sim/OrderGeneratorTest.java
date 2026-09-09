@@ -15,7 +15,7 @@ class OrderGeneratorTest {
   private static final Symbol SYMBOL = new Symbol("BTC", "USD", 5L, 2L);
 
   private static SimulatorConfig config() {
-    return new SimulatorConfig(1, 1, 0L, 1_000L, 100L, 4L, 2L, 10L, List.of(1L), 42L, 1000);
+    return new SimulatorConfig(1, 1, 0L, 1_000L, 100L, 4L, 2L, 10L, List.of(1L), 42L, 1000, 0L, 0L);
   }
 
   @Test

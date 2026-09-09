@@ -137,8 +137,9 @@ public final class LoadSimulator {
   private void runTrader(
       SimulatorConfig config, RunMetrics runMetrics, long account, long seed, long deadlineNanos) {
     OrderGenerator generator = new OrderGenerator(symbol, config, new Random(seed));
-    long pacingNanos =
-        config.orderRatePerSecond() > 0 ? 1_000_000_000L / config.orderRatePerSecond() : 0L;
+    // A distinct stream for think-time so it does not perturb the reproducible order
+    // stream driven by the generator's own RNG.
+    Random pacingRng = new Random(seed * 6_364_136_223_846_793_005L + 1L);
     for (int j = 0;
         j < config.ordersPerTrader() && !stopRequested && System.nanoTime() < deadlineNanos;
         j++) {
@@ -168,9 +169,33 @@ public final class LoadSimulator {
         runMetrics.countRejected();
         runMetrics.unmark(id);
       }
-      if (pacingNanos > 0L) {
-        LockSupport.parkNanos(pacingNanos);
-      }
+      parkThinkTime(thinkNanos(config, pacingRng), deadlineNanos);
+    }
+  }
+
+  // Pace before the next order: prefer a randomized human-like think-time, falling
+  // back to the fixed orderRatePerSecond, else no pause (max-throughput stress mode).
+  private static long thinkNanos(SimulatorConfig config, Random pacingRng) {
+    if (config.maxThinkMillis() > 0L) {
+      long span = config.maxThinkMillis() - config.minThinkMillis();
+      long extra = span > 0L ? (long) (pacingRng.nextDouble() * (span + 1L)) : 0L;
+      return (config.minThinkMillis() + extra) * 1_000_000L;
+    }
+    return config.orderRatePerSecond() > 0L ? 1_000_000_000L / config.orderRatePerSecond() : 0L;
+  }
+
+  // Park up to thinkNanos, in short chunks, so a stop request (or the deadline) is
+  // honoured promptly even when the think-time is several seconds.
+  private void parkThinkTime(long thinkNanos, long deadlineNanos) {
+    if (thinkNanos <= 0L) {
+      return;
+    }
+    long remaining = thinkNanos;
+    long chunk = 100_000_000L; // 100ms
+    while (remaining > 0L && !stopRequested && System.nanoTime() < deadlineNanos) {
+      long park = Math.min(remaining, chunk);
+      LockSupport.parkNanos(park);
+      remaining -= park;
     }
   }
 

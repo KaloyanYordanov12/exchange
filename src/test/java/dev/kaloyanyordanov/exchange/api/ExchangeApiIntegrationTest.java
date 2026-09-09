@@ -96,7 +96,7 @@ class ExchangeApiIntegrationTest {
         "{\"pair\":\"" + SIM_PAIR + "\",\"traderCount\":2,\"ordersPerTrader\":10,"
             + "\"orderRatePerSecond\":0,\"durationMillis\":10000,\"midPrice\":100,"
             + "\"priceSpreadTicks\":5,\"minQuantity\":1,\"maxQuantity\":3,\"randomSeed\":1,"
-            + "\"maxLatencySamples\":100000}";
+            + "\"maxLatencySamples\":100000,\"minThinkMillis\":0,\"maxThinkMillis\":0}";
     mockMvc
         .perform(
             post("/admin/simulator/start")

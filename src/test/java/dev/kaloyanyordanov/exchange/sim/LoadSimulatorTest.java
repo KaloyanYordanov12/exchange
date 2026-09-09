@@ -36,7 +36,7 @@ class LoadSimulatorTest {
 
   private static SimulatorConfig config(int traders, int perTrader) {
     return new SimulatorConfig(
-        traders, perTrader, 0L, 60_000L, 100L, 5L, 1L, 5L, List.of(1L, 2L), 7L, 1_000_000);
+        traders, perTrader, 0L, 60_000L, 100L, 5L, 1L, 5L, List.of(1L, 2L), 7L, 1_000_000, 0L, 0L);
   }
 
   @Test
@@ -72,7 +72,7 @@ class LoadSimulatorTest {
     // A long-paced run stays active while we try to start another.
     simulator.start(
         new SimulatorConfig(
-            2, 1_000, 5L, 60_000L, 100L, 5L, 1L, 5L, List.of(1L, 2L), 7L, 1_000_000));
+            2, 1_000, 5L, 60_000L, 100L, 5L, 1L, 5L, List.of(1L, 2L), 7L, 1_000_000, 0L, 0L));
     try {
       assertThatThrownBy(() -> simulator.start(config(1, 1)))
           .isInstanceOf(IllegalStateException.class);

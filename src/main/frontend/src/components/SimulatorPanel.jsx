@@ -8,9 +8,15 @@ import { C, MONO, SANS } from '../theme.js';
 // numbers: every value is read back from the running engine.
 export function SimulatorPanel({ pairInfo, mid }) {
   const [traders, setTraders] = useState(250);
+  const [thinkSeconds, setThinkSeconds] = useState(6); // avg think-time; 0 = max speed
   const [metrics, setMetrics] = useState(null);
   const [msg, setMsg] = useState('');
   const busyRef = useRef(false);
+
+  // Randomized human-like think-time: uniform in +/-50% of the chosen average, so a
+  // large roster behaves like a real market. 0 = max-throughput stress test.
+  const minThinkMillis = Math.round(thinkSeconds * 1000 * 0.5);
+  const maxThinkMillis = Math.round(thinkSeconds * 1000 * 1.5);
 
   useEffect(() => {
     let alive = true;
@@ -56,6 +62,8 @@ export function SimulatorPanel({ pairInfo, mid }) {
           maxQuantity: 5,
           randomSeed: Math.floor(Math.random() * 1_000_000_000),
           maxLatencySamples: 100000,
+          minThinkMillis,
+          maxThinkMillis,
         });
         setMsg('');
       }
@@ -105,6 +113,23 @@ export function SimulatorPanel({ pairInfo, mid }) {
           step="10"
           value={traders}
           onChange={(e) => setTraders(+e.target.value)}
+          style={{ width: '100%', accentColor: C.amber }}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 12, color: C.muted }}>Trader think time</span>
+          <span style={{ fontFamily: MONO, fontSize: 13, color: C.amber }}>
+            {thinkSeconds === 0
+              ? 'max speed'
+              : `~${(minThinkMillis / 1000).toFixed(1)}-${(maxThinkMillis / 1000).toFixed(1)}s`}
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="12"
+          step="0.5"
+          value={thinkSeconds}
+          onChange={(e) => setThinkSeconds(+e.target.value)}
           style={{ width: '100%', accentColor: C.amber }}
         />
         <button

@@ -15,6 +15,9 @@ package dev.kaloyanyordanov.exchange.api;
  * @param maxQuantity        maximum order quantity in units
  * @param randomSeed         seed for reproducible order streams
  * @param maxLatencySamples  cap on retained latency samples
+ * @param minThinkMillis     lower bound of the randomized per-trader think-time
+ * @param maxThinkMillis     upper bound of the randomized per-trader think-time
+ *     (0 disables think-time and uses {@code orderRatePerSecond})
  */
 public record SimulatorStartRequest(
     String pair,
@@ -27,4 +30,6 @@ public record SimulatorStartRequest(
     long minQuantity,
     long maxQuantity,
     long randomSeed,
-    int maxLatencySamples) {}
+    int maxLatencySamples,
+    long minThinkMillis,
+    long maxThinkMillis) {}

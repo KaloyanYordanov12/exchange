@@ -49,7 +49,8 @@ class SimulatorControllerTest {
     return "{\"pair\":\"BTC-USD\",\"traderCount\":" + traderCount
         + ",\"ordersPerTrader\":10,\"orderRatePerSecond\":0,\"durationMillis\":1000,"
         + "\"midPrice\":100,\"priceSpreadTicks\":5,\"minQuantity\":1,\"maxQuantity\":5,"
-        + "\"randomSeed\":7,\"maxLatencySamples\":1000}";
+        + "\"randomSeed\":7,\"maxLatencySamples\":1000,\"minThinkMillis\":0,"
+        + "\"maxThinkMillis\":0}";
   }
 
   @Test
