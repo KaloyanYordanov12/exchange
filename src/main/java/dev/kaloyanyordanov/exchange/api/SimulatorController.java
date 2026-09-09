@@ -63,7 +63,8 @@ public class SimulatorController {
               request.randomSeed(),
               request.maxLatencySamples(),
               request.minThinkMillis(),
-              request.maxThinkMillis());
+              request.maxThinkMillis(),
+              request.aggression());
     } catch (IllegalArgumentException invalid) {
       return ResponseEntity.badRequest().body(Map.of("error", invalid.getMessage()));
     }

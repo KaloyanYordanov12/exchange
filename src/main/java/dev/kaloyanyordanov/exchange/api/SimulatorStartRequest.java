@@ -18,6 +18,8 @@ package dev.kaloyanyordanov.exchange.api;
  * @param minThinkMillis     lower bound of the randomized per-trader think-time
  * @param maxThinkMillis     upper bound of the randomized per-trader think-time
  *     (0 disables think-time and uses {@code orderRatePerSecond})
+ * @param aggression         fraction (0..1) of orders that cross the mid (taker) vs
+ *     rest away from it (maker)
  */
 public record SimulatorStartRequest(
     String pair,
@@ -32,4 +34,5 @@ public record SimulatorStartRequest(
     long randomSeed,
     int maxLatencySamples,
     long minThinkMillis,
-    long maxThinkMillis) {}
+    long maxThinkMillis,
+    double aggression) {}

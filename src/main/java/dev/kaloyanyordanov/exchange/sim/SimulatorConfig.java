@@ -15,6 +15,12 @@ import java.util.List;
  * to zero gives the max-throughput stress-test mode. When no think-time is set,
  * {@code orderRatePerSecond} provides a fixed fallback pace (0 = as fast as possible).
  *
+ * <p>Flow shape: {@code aggression} is the fraction of orders that cross the mid
+ * (takers) rather than rest away from it (makers). A passive buy rests as a bid below
+ * the mid and a passive sell as an ask above it, so a two-sided book with a real
+ * spread forms; the aggressive minority crosses that spread and trades. {@code 0} is
+ * an all-passive book, {@code 1} is all-crossing flow.
+ *
  * @param traderCount        number of concurrent (virtual-thread) traders
  * @param ordersPerTrader    max orders each trader submits (0 = unbounded)
  * @param orderRatePerSecond fixed fallback per-trader pace in orders/second (0 =
@@ -30,6 +36,8 @@ import java.util.List;
  * @param minThinkMillis     lower bound of the randomized per-trader think-time
  * @param maxThinkMillis     upper bound of the randomized per-trader think-time
  *     (0 disables think-time; falls back to {@code orderRatePerSecond})
+ * @param aggression         fraction (0..1) of orders that cross the mid (taker) vs
+ *     rest away from it (maker); higher means more trades, lower a deeper book
  */
 public record SimulatorConfig(
     int traderCount,
@@ -44,7 +52,8 @@ public record SimulatorConfig(
     long randomSeed,
     int maxLatencySamples,
     long minThinkMillis,
-    long maxThinkMillis) {
+    long maxThinkMillis,
+    double aggression) {
 
   /** Validates the configuration. */
   public SimulatorConfig {
@@ -67,6 +76,9 @@ public record SimulatorConfig(
     }
     if (maxThinkMillis > 0 && minThinkMillis > maxThinkMillis) {
       throw new IllegalArgumentException("require minThinkMillis <= maxThinkMillis");
+    }
+    if (aggression < 0.0 || aggression > 1.0) {
+      throw new IllegalArgumentException("aggression must be in [0, 1]: " + aggression);
     }
     if (midPrice <= 0) {
       throw new IllegalArgumentException("midPrice must be positive: " + midPrice);

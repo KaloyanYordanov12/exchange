@@ -9,6 +9,7 @@ import { C, MONO, SANS } from '../theme.js';
 export function SimulatorPanel({ pairInfo, mid }) {
   const [traders, setTraders] = useState(250);
   const [thinkSeconds, setThinkSeconds] = useState(6); // avg think-time; 0 = max speed
+  const [aggression, setAggression] = useState(0.3); // taker fraction; rest is passive
   const [continuous, setContinuous] = useState(true); // default: keep the market alive
   const [durationSeconds, setDurationSeconds] = useState(60); // used when not continuous
   const [metrics, setMetrics] = useState(null);
@@ -66,6 +67,7 @@ export function SimulatorPanel({ pairInfo, mid }) {
           maxLatencySamples: 100000,
           minThinkMillis,
           maxThinkMillis,
+          aggression,
         });
         setMsg('');
       }
@@ -132,6 +134,21 @@ export function SimulatorPanel({ pairInfo, mid }) {
           step="0.5"
           value={thinkSeconds}
           onChange={(e) => setThinkSeconds(+e.target.value)}
+          style={{ width: '100%', accentColor: C.amber }}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 12, color: C.muted }}>Aggression</span>
+          <span style={{ fontFamily: MONO, fontSize: 13, color: C.amber }}>
+            {Math.round(aggression * 100)}% taker
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value={aggression}
+          onChange={(e) => setAggression(+e.target.value)}
           style={{ width: '100%', accentColor: C.amber }}
         />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
