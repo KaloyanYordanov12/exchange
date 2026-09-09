@@ -109,8 +109,8 @@ export function TerminalPage({ pair }) {
           <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div
               style={{
-                flex: 1,
-                minHeight: 360,
+                height: 460,
+                flex: '0 0 auto',
                 border: `1px solid ${C.card2}`,
                 borderRadius: 11,
                 boxShadow: '0 8px 24px rgba(0,0,0,.4)',

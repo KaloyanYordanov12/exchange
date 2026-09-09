@@ -3,6 +3,11 @@ import { createChart, CrosshairMode, LineStyle } from 'lightweight-charts';
 import { C, MONO, SANS } from '../theme.js';
 import { priceUsd, priceDecimals } from '../format.js';
 
+// Default number of most-recent candles shown on load, like TradingView/Binance: a
+// readable window, not the whole history squeezed in. The viewer scrolls/zooms for
+// older data; the price axis auto-scales to whatever is visible.
+const DEFAULT_VIEW = 120;
+
 // Candle/line price chart with a volume panel, crosshair, and a SEEDED/LIVE divider,
 // rendered with TradingView Lightweight Charts and skinned to the design. All data is
 // the real backend candle series (scaled integers converted to USD for display).
@@ -15,6 +20,8 @@ export function LwcChart({ candles, realBoundary, pairInfo, type, fitKey, onHove
   const lineRef = useRef(null);
   const byTimeRef = useRef(new Map());
   const fitKeyRef = useRef(null);
+  const followingRef = useRef(true); // true while the viewer is at the right (newest) edge
+  const barCountRef = useRef(0);
   const decimals = priceDecimals(pairInfo.tickSize);
 
   // Create the chart once.
@@ -58,6 +65,13 @@ export function LwcChart({ candles, realBoundary, pairInfo, type, fitKey, onHove
     chart.applyOptions({ width: el.clientWidth, height: el.clientHeight });
 
     chart.timeScale().subscribeVisibleTimeRangeChange(positionDivider);
+
+    // Track whether the viewer is pinned to the newest bar. If they scroll back to
+    // older data we stop auto-advancing; when they return to the right edge we resume.
+    chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      if (!range) return;
+      followingRef.current = range.to >= barCountRef.current - 1.5;
+    });
 
     chart.subscribeCrosshairMove((param) => {
       if (!param || !param.time || !param.point) {
@@ -160,11 +174,25 @@ export function LwcChart({ candles, realBoundary, pairInfo, type, fitKey, onHove
     byTimeRef.current = map;
     main.setData(priceData);
     vol.setData(volData);
-    // Fit only when the pair/timeframe/type changes; periodic refreshes keep the
-    // viewer's current zoom and scroll position.
-    if (priceData.length && fitKeyRef.current !== fitKey) {
-      chartRef.current.timeScale().fitContent();
-      fitKeyRef.current = fitKey;
+    const bars = priceData.length;
+    barCountRef.current = bars;
+    const ts = chartRef.current.timeScale();
+    if (bars > 0) {
+      if (fitKeyRef.current !== fitKey) {
+        // New pair/timeframe/type: anchor to the most recent DEFAULT_VIEW candles
+        // (not the whole history). The price axis auto-scales to this window.
+        const view = Math.min(bars, DEFAULT_VIEW);
+        ts.setVisibleLogicalRange({ from: bars - view, to: bars });
+        fitKeyRef.current = fitKey;
+        followingRef.current = true;
+      } else if (followingRef.current) {
+        // Live refresh while pinned to the newest bar: advance the window to include
+        // new candles, preserving the viewer's current zoom width.
+        const range = ts.getVisibleLogicalRange();
+        const width = range ? Math.max(2, range.to - range.from) : DEFAULT_VIEW;
+        ts.setVisibleLogicalRange({ from: bars - width, to: bars });
+      }
+      // If the viewer scrolled back to older data, leave their view untouched.
     }
     requestAnimationFrame(positionDivider);
   }
