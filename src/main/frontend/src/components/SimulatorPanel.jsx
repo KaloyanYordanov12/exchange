@@ -9,6 +9,8 @@ import { C, MONO, SANS } from '../theme.js';
 export function SimulatorPanel({ pairInfo, mid }) {
   const [traders, setTraders] = useState(250);
   const [thinkSeconds, setThinkSeconds] = useState(6); // avg think-time; 0 = max speed
+  const [continuous, setContinuous] = useState(true); // default: keep the market alive
+  const [durationSeconds, setDurationSeconds] = useState(60); // used when not continuous
   const [metrics, setMetrics] = useState(null);
   const [msg, setMsg] = useState('');
   const busyRef = useRef(false);
@@ -53,9 +55,9 @@ export function SimulatorPanel({ pairInfo, mid }) {
         await api.startSimulator({
           pair: pairInfo.pairId,
           traderCount: traders,
-          ordersPerTrader: 400,
+          ordersPerTrader: 0, // unbounded: the run ends on the duration or on Stop
           orderRatePerSecond: 0,
-          durationMillis: 120000,
+          durationMillis: continuous ? 0 : Math.max(1, Math.round(durationSeconds)) * 1000,
           midPrice: midScaled,
           priceSpreadTicks: 25,
           minQuantity: 1,
@@ -132,6 +134,68 @@ export function SimulatorPanel({ pairInfo, mid }) {
           onChange={(e) => setThinkSeconds(+e.target.value)}
           style={{ width: '100%', accentColor: C.amber }}
         />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 12, color: C.muted }}>Run</span>
+          <div
+            style={{
+              display: 'flex',
+              gap: 2,
+              background: C.inputBg,
+              border: `1px solid ${C.border2}`,
+              borderRadius: 8,
+              padding: 3,
+            }}
+          >
+            {[
+              [true, 'Continuous'],
+              [false, 'Timed'],
+            ].map(([val, label]) => {
+              const active = val === continuous;
+              return (
+                <button
+                  key={label}
+                  onClick={() => setContinuous(val)}
+                  style={{
+                    cursor: 'pointer',
+                    border: 'none',
+                    borderRadius: 6,
+                    padding: '5px 11px',
+                    fontFamily: MONO,
+                    fontSize: 11.5,
+                    fontWeight: 500,
+                    color: active ? '#1a1204' : C.muted,
+                    background: active ? C.amber : 'transparent',
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {!continuous && (
+          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 12, color: C.muted }}>Duration (s)</span>
+            <input
+              type="number"
+              min="1"
+              value={durationSeconds}
+              onChange={(e) => setDurationSeconds(+e.target.value)}
+              style={{
+                background: C.inputBg,
+                border: `1px solid ${C.border2}`,
+                borderRadius: 7,
+                color: C.text,
+                fontFamily: MONO,
+                fontSize: 13,
+                padding: '6px 10px',
+                width: 90,
+                textAlign: 'right',
+                outline: 'none',
+              }}
+            />
+          </label>
+        )}
         <button
           onClick={launch}
           style={

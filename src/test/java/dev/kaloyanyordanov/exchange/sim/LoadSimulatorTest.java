@@ -63,6 +63,33 @@ class LoadSimulatorTest {
   }
 
   @Test
+  void continuousRunStaysActiveUntilStopped() throws InterruptedException {
+    SimulatorMetricsSink sink = new SimulatorMetricsSink();
+    Setup setup = setup(1 << 16, sink);
+    setup.engine().start();
+    LoadSimulator simulator = new LoadSimulator(setup.engine(), SYMBOL, setup.cash(), sink);
+
+    // ordersPerTrader 0 (unbounded) + maxDurationMillis 0 (no deadline): the run only
+    // ends when stopped. A small think-time keeps it paced rather than flooding.
+    simulator.start(
+        new SimulatorConfig(
+            2, 0, 0L, 0L, 100L, 5L, 1L, 5L, List.of(1L, 2L), 7L, 1_000_000, 5L, 10L));
+    try {
+      // It keeps running and keeps submitting well past any old fixed duration.
+      await().atMost(Duration.ofSeconds(5)).until(() -> simulator.metrics().submitted() > 0L);
+      assertThat(simulator.isRunning()).isTrue();
+    } finally {
+      simulator.stop();
+    }
+
+    // Once stopped, traders exit promptly and the run winds down.
+    await().atMost(Duration.ofSeconds(20)).until(() -> !simulator.isRunning());
+    setup.engine().stop();
+    setup.cash().stop();
+    assertThat(simulator.metrics().submitted()).isPositive();
+  }
+
+  @Test
   void rejectsSecondRunWhileOneIsActive() throws InterruptedException {
     SimulatorMetricsSink sink = new SimulatorMetricsSink();
     Setup setup = setup(1 << 16, sink);

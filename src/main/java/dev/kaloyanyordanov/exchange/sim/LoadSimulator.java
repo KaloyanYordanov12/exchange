@@ -110,7 +110,11 @@ public final class LoadSimulator {
       sink.activate(runMetrics);
       executor = Executors.newVirtualThreadPerTaskExecutor();
 
-      long deadlineNanos = startNanos + config.maxDurationMillis() * 1_000_000L;
+      // 0 = run continuously until stop(); otherwise cap the run at the deadline.
+      long deadlineNanos =
+          config.maxDurationMillis() > 0
+              ? startNanos + config.maxDurationMillis() * 1_000_000L
+              : Long.MAX_VALUE;
       CountDownLatch done = new CountDownLatch(config.traderCount());
       for (int i = 0; i < config.traderCount(); i++) {
         long account = config.accountIds().get(i % config.accountIds().size());
@@ -140,8 +144,12 @@ public final class LoadSimulator {
     // A distinct stream for think-time so it does not perturb the reproducible order
     // stream driven by the generator's own RNG.
     Random pacingRng = new Random(seed * 6_364_136_223_846_793_005L + 1L);
-    for (int j = 0;
-        j < config.ordersPerTrader() && !stopRequested && System.nanoTime() < deadlineNanos;
+    // ordersPerTrader 0 = unbounded: the run ends on the deadline or on stop().
+    boolean unboundedOrders = config.ordersPerTrader() <= 0;
+    for (long j = 0;
+        (unboundedOrders || j < config.ordersPerTrader())
+            && !stopRequested
+            && System.nanoTime() < deadlineNanos;
         j++) {
       GeneratedOrder order = generator.next();
       long id = orderIds.getAndIncrement();
