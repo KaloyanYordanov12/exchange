@@ -6,7 +6,7 @@ import { fmtPrice, fmtQty, fmtTimeOfDay } from '../format.js';
 // inferred by the tick rule (up-tick green, down-tick red) against the prior print.
 export function TradeTape({ trades, pairInfo }) {
   return (
-    <Panel title="Trade Tape" style={{ flex: 1 }}>
+    <Panel title="Trade Tape" style={{ height: 284, flex: '0 0 auto' }}>
       <div
         style={{
           display: 'grid',
@@ -24,7 +24,7 @@ export function TradeTape({ trades, pairInfo }) {
         <span style={{ textAlign: 'right' }}>SIZE</span>
         <span style={{ textAlign: 'right' }}>TIME</span>
       </div>
-      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {trades.length === 0 && (
           <div style={{ padding: '12px', color: C.muted2, fontFamily: MONO, fontSize: 12 }}>
             Waiting for trades...

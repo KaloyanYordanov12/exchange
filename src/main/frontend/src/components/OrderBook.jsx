@@ -30,7 +30,7 @@ export function OrderBook({ book, pairInfo }) {
     <Panel
       title="Order Book"
       right={<span style={{ fontFamily: MONO, color: C.muted2 }}>{pairInfo.pairId}</span>}
-      style={{ flex: 1.5 }}
+      style={{ height: 496, flex: '0 0 auto' }}
     >
       <div
         style={{
