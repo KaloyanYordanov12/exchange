@@ -10,13 +10,22 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     request may launch. A request above the cap is clamped down to it, so a visitor
  *     cannot exhaust a constrained deployment's memory. Unset or non-positive means
  *     unlimited (the local default).
+ * @param ambientTraders   total simulated traders for the always-on ambient market,
+ *     spread across the pairs and auto-started at boot as a continuous, lightweight,
+ *     human-paced run so the exchange looks alive with no manual launch. {@code 0}
+ *     (the local default) turns it off. Each pair's share is itself clamped to
+ *     {@code publicMaxTraders}.
  */
 @ConfigurationProperties(prefix = "exchange.sim")
-public record SimProperties(Integer publicMaxTraders) {
+public record SimProperties(Integer publicMaxTraders, Integer ambientTraders) {
 
-  /** Applies the unlimited default when unset or non-positive. */
+  /** Applies the defaults: unlimited cap, ambient off. */
   public SimProperties {
-    publicMaxTraders =
-        (publicMaxTraders == null || publicMaxTraders <= 0) ? Integer.MAX_VALUE : publicMaxTraders;
+    if (publicMaxTraders == null || publicMaxTraders <= 0) {
+      publicMaxTraders = Integer.MAX_VALUE;
+    }
+    if (ambientTraders == null || ambientTraders < 0) {
+      ambientTraders = 0;
+    }
   }
 }

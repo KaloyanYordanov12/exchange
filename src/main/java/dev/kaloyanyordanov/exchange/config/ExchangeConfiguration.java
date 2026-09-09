@@ -13,6 +13,7 @@ import dev.kaloyanyordanov.exchange.payment.DemoPaymentProvider;
 import dev.kaloyanyordanov.exchange.payment.PaymentProvider;
 import dev.kaloyanyordanov.exchange.payment.PaymentService;
 import dev.kaloyanyordanov.exchange.persistence.PersistenceWorker;
+import dev.kaloyanyordanov.exchange.platform.AmbientMarketRunner;
 import dev.kaloyanyordanov.exchange.platform.ExchangeRegistry;
 import dev.kaloyanyordanov.exchange.realtime.MarketDataWebSocketHandler;
 import dev.kaloyanyordanov.exchange.realtime.PairBroadcasters;
@@ -184,6 +185,32 @@ public class ExchangeConfiguration {
         Duration.ofMillis(ledgerTimeout),
         intervalMillis,
         timeoutMillis);
+  }
+
+  /**
+   * The always-on ambient market. Depends on the registry (so it starts after every
+   * engine is live) and starts a small continuous background run per pair when
+   * {@code exchange.sim.ambient-traders} is set; off by default. Stopped before the
+   * registry on shutdown.
+   *
+   * @param registry      the started pair registry
+   * @param properties    the exchange configuration (for the funded account ids)
+   * @param simProperties the ambient trader count and public cap
+   * @return the ambient runner
+   */
+  @Bean(initMethod = "start", destroyMethod = "stop")
+  public AmbientMarketRunner ambientMarketRunner(
+      ExchangeRegistry registry, ExchangeProperties properties, SimProperties simProperties) {
+    List<Long> accountIds =
+        properties.traders().stream()
+            .map(ExchangeProperties.TraderProperties::accountId)
+            .toList();
+    return new AmbientMarketRunner(
+        registry,
+        accountIds,
+        simProperties.ambientTraders(),
+        simProperties.publicMaxTraders(),
+        20_260_909L);
   }
 
   /**

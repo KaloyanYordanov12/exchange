@@ -52,7 +52,7 @@ class SimulatorControllerTest {
 
   private MockMvc controllerWithCap(Integer cap) {
     return MockMvcBuilders.standaloneSetup(
-            new SimulatorController(registry, properties, new SimProperties(cap)))
+            new SimulatorController(registry, properties, new SimProperties(cap, 0)))
         .build();
   }
 
